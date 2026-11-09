@@ -1,0 +1,27 @@
+# Workspace data and generated views
+/Records/
+/Materials/
+/Home.md
+/.obsidian/
+/.system/index/
+/.system/history/
+/.system/literature/
+/.system/config/*
+!/.system/config/registry.example.json
+/.system/context/*
+!/.system/context/default.md
+
+# Local configuration, environments and build outputs
+.env
+.env.*
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+/build/
+/dist/
+/Exports/
+*.app/
+*.dmg
+*.zip

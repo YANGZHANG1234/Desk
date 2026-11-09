@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "record_roots": ["Records"],
+  "paper_roots": ["Materials/Research/Papers"],
+  "domains": ["research", "teaching", "collaboration-admin"],
+  "materials": [
+    {"id": "research", "title": "Research", "path": "Materials/Research", "access": "linked"},
+    {"id": "references", "title": "Reference library", "path": "Materials/Library", "access": "linked"},
+    {"id": "methods", "title": "Methods and tutorials", "path": "Materials/Methods", "access": "linked"},
+    {"id": "teaching", "title": "Teaching", "path": "Materials/Teaching", "access": "on_demand"},
+    {"id": "admin", "title": "Administration", "path": "Materials/Administration", "access": "on_demand"}
+  ],
+  "connections": {
+    "zotero": {"status": "not_connected", "mode": "local_read_only"},
+    "outlook": {"status": "not_connected"},
+    "obsidian": {"status": "not_connected", "mode": "shared_markdown"}
+  }
+}

@@ -320,6 +320,12 @@ class Handler(BaseHTTPRequestHandler):
                 mod=sys.modules[__name__]
                 result=graph.projection(mod) if url.path.endswith('/graph') else jobs.jobs(mod)
                 return self.send_bytes(json.dumps(result,ensure_ascii=False).encode(),'application/json')
+            if url.path=='/api/external':
+                # Read-only companion exports (PAICC/FIC). Served only here: never merged into
+                # records(), generated index files or literature agent prompts.
+                if self.headers.get('Sec-Fetch-Site','same-origin') not in ['same-origin','none']:return self.send_error(403)
+                import external_feeds
+                return self.send_bytes(json.dumps(external_feeds.snapshot(),ensure_ascii=False).encode(),'application/json; charset=utf-8')
             if url.path=='/api/records':
                 rs=records()
                 return self.send_bytes(json.dumps(rs,ensure_ascii=False).encode(),'application/json; charset=utf-8')

@@ -47,7 +47,12 @@ ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',ex
  {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'d2',kind:'finance_daily',title:'New report',date:'2026-11-10',updated_at:'2026-11-10T08:00:00+00:00',body:'# 金融日报\n\n> note\n\n- **Bold** item <img src=x onerror=alert(1)>\n- [ok](https://example.invalid/a) [bad](javascript:alert(1)) [local](file:///x)\n- [ ] not a checkbox'},
  {source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'a1',kind:'finance_alert',title:'Sample alert',level:'L3',rule:'sample_rule',priority:'P1',summary_zh:'示例提醒'},
  {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'l1',kind:'learning',title:'TWR vs MWR',topic:'return_measurement'}]}]};
+ctx.externalData.sources[1].records.push({source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'r1',kind:'finance_review',status:'confirmed',tags:['review'],title:'Sample review',date:'2026-11-10',body:'## 复盘\n\n| 项目 | 结论 |\n|---|---|\n| A <b>x</b> | **ok** |\n'},{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'r0',kind:'finance_review',status:'draft',title:'Older review',date:'2026-11-09'});
 let fin=ctx.financeView();
+let rev=fin.slice(fin.indexOf('id="finance-review"'),fin.indexOf('id="finance-latest"'));
+assert(rev.includes('Sample review')&&rev.includes('Confirmed 已确认')&&!rev.includes('演示 Demo'),'review shown, confirmed, not demo');
+assert(rev.includes('<table>')&&rev.includes('<th>项目</th>')&&rev.includes('A &lt;b&gt;x&lt;/b&gt;')&&rev.includes('<strong>ok</strong>'),'review table rendered and escaped');
+assert(rev.includes('Earlier reviews')&&rev.includes('Draft 草稿'),'older draft review listed');
 assert(fin.includes('Level: L3')&&fin.includes('Rule: sample_rule')&&fin.includes('示例提醒'),'alert fields');
 assert(fin.indexOf('id="finance-alerts"')<fin.indexOf('id="finance-latest"'),'alerts first');
 let latest=fin.slice(fin.indexOf('id="finance-latest"'),fin.indexOf('id="finance-earlier"'));

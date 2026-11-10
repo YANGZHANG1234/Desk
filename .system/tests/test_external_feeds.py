@@ -74,6 +74,11 @@ class ExternalFeedTests(unittest.TestCase):
         paicc = feeds.snapshot()['sources'][0]
         self.assertTrue(paicc['schema_ok']); self.assertTrue(any('skipped' in w for w in paicc['warnings']))
 
+    def test_finance_review_kind_is_recognised_and_not_demo(self):
+        record(self.export / 'fic', 'review-2026-11-10.md', source='fic', source_id='r1', kind='finance_review', status='confirmed', demo=False, tags=['review'], title='Sample review', body='| a | b |\n|---|---|\n| 1 | 2 |')
+        r = self.all()['r1']
+        self.assertEqual(r['kind'], 'finance_review'); self.assertFalse(r['demo']); self.assertIn('| 1 | 2 |', r['body'])
+
     def test_missing_and_empty_folders(self):
         snap = feeds.snapshot(self.root / 'nowhere')
         self.assertEqual([s['exists'] for s in snap['sources']], [False, False])

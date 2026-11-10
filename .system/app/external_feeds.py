@@ -13,7 +13,7 @@ from pathlib import Path
 
 EXPORT_ROOT = Path(os.environ.get('DESK_EXPORT_ROOT') or Path.home() / 'Library/Application Support/PAICC/desk-export')
 SOURCES = {'paicc': 'PAICC', 'fic': 'FIC'}
-KINDS = ['meeting', 'task', 'briefing', 'milestone', 'finance_daily', 'finance_alert', 'learning']
+KINDS = ['meeting', 'task', 'briefing', 'milestone', 'finance_daily', 'finance_alert', 'finance_review', 'learning']
 SCHEMA_VERSION = 1
 MAX_FILE_BYTES = 512 * 1024
 MAX_RECORDS = 2000

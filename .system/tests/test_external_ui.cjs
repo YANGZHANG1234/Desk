@@ -42,6 +42,21 @@ assert(paicc.includes('Daily briefing · 2026-11-10'),'briefing title from perio
 assert(paicc.includes('>Cancelled<')&&paicc.includes('Join online')&&!paicc.includes('Needs review'),'meeting status and online link');
 assert(sec('finance').includes('FIC sample daily')&&!sec('briefing').includes('FIC sample daily'),'FIC briefings shown under finance');
 assert(paicc.includes('exported'),'generated_at accepted for display');
+ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[]},{source:'fic',label:'FIC',exists:true,manifest:{schema:1},warnings:['Unsupported schema_version None'],records:[
+ {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'d1',kind:'briefing',title:'Old report',date:'2026-11-09',updated_at:'2026-11-09T08:00:00+00:00',body:'# Old'},
+ {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'d2',kind:'finance_daily',title:'New report',date:'2026-11-10',updated_at:'2026-11-10T08:00:00+00:00',body:'# 金融日报\n\n> note\n\n- **Bold** item <img src=x onerror=alert(1)>\n- [ok](https://example.invalid/a) [bad](javascript:alert(1)) [local](file:///x)\n- [ ] not a checkbox'},
+ {source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'a1',kind:'finance_alert',title:'Sample alert'},
+ {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'l1',kind:'learning',title:'TWR vs MWR',topic:'return_measurement'}]}]};
+let fin=ctx.financeView();
+assert(fin.indexOf('id="finance-alerts"')<fin.indexOf('id="finance-latest"'),'alerts first');
+let latest=fin.slice(fin.indexOf('id="finance-latest"'),fin.indexOf('id="finance-earlier"'));
+assert(latest.includes('New report')&&latest.includes('<strong>Bold</strong>')&&latest.includes('<blockquote>'),'latest report rendered as Markdown');
+assert(fin.slice(fin.indexOf('id="finance-earlier"')).includes('Old report'),'older report listed');
+assert(!fin.includes('<img')&&fin.includes('&lt;img')&&!/href="(javascript|file):/.test(fin)&&!fin.includes('data-checkline')&&!fin.includes('data-open'),'markdown is escaped and read-only');
+assert(fin.includes('href="https://example.invalid/a"'),'https links kept');
+assert(fin.includes('return measurement')&&fin.includes('TWR vs MWR'),'learning grouped by topic');
+assert(fin.includes('finance-demo-note')&&fin.includes('Unsupported schema_version None'),'demo note and schema warning');
+assert(!/<input|<textarea|contenteditable/.test(fin),'no editing controls');
 ctx.externalData={export_root:'/tmp/x',sources:[{label:'PAICC',exists:false,manifest:null,warnings:[],records:[]},{label:'FIC',exists:false,manifest:null,warnings:[],records:[]}]};
 assert(ctx.externalView().includes('No exported records yet'),'empty state');
 console.log('Briefing view: sections, read-only badges, demo marks, escaping, safe links and empty state passed');

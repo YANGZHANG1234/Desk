@@ -2,7 +2,15 @@
 
 Desk is a local research workbench for projects, tasks, meetings, journals and reading notes. It stores records as Markdown with YAML frontmatter so you can also work on them in a text editor or Obsidian.
 
-## Quick start
+## Install on macOS
+
+Download the DMG from [GitHub Releases](https://github.com/masite123/Desk/releases), open it, and drag **Desk** into **Applications**. Open Desk from Applications. It starts a local server and opens your default browser. Quit Desk from its menu to stop the server.
+
+The installer includes Python and supports Apple Silicon Macs running macOS 15 or later. It uses ad hoc signing and has no Apple notarization. macOS may block the first launch. If you trust the download and have verified the published SHA-256, see [Apple’s instructions for approving an app](https://support.apple.com/en-us/102445).
+
+The installed app stores records under `~/Library/Application Support/Desk`. Your records stay in that folder when you replace the app.
+
+## Run from source
 
 Use Python 3.11 or later on macOS or a compatible Unix-like system. This source package was tested on macOS. Desk uses Unix file locks, so native Windows support would require a port.
 
@@ -65,7 +73,13 @@ Node.js is used only for JavaScript tests. From a committed checkout, create a s
 git archive --format=zip --prefix=desk/ --output=../desk-source.zip HEAD
 ```
 
-The source package runs in the browser and uses the Python launch command above. The original machine-specific macOS launcher and reminders setup are outside this package.
+To build the Apple Silicon DMG, install the Xcode Command Line Tools and download the [pinned Python runtime](packaging/macos/Runtime.md). From a clean, committed checkout, run:
+
+```sh
+packaging/macos/build.sh /path/to/cpython-3.13.18+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz
+```
+
+The DMG and its SHA-256 file are written to `dist/`. The macOS installer includes the browser launcher. Calendar records are local and the installer does not set up notification reminders.
 
 ## Licensing
 

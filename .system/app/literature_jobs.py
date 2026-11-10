@@ -58,7 +58,7 @@ def agent(m,prompt,folder):
  return json.loads(text)
 
 def extract(m,p,limit=None):
- vendor=str(m.SYS/'app/vendor')
+ vendor=str(Path(__file__).resolve().with_name('vendor'))
  if vendor not in sys.path:sys.path.insert(0,vendor)
  from pypdf import PdfReader
  r=PdfReader(p)

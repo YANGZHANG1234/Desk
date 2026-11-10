@@ -7,7 +7,9 @@ if str(Path(__file__).parent) not in sys.path:sys.path.insert(0,str(Path(__file_
 from urllib.parse import quote, unquote, urlparse, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ROOT = Path(__file__).resolve().parents[2]
+APP = Path(__file__).resolve().parent
+ASSETS = APP.parent
+ROOT = ASSETS.parent
 W = ROOT / 'Records'
 SYS = ROOT / '.system'
 TYPES = {'projects':'Projects','work-packages':'Work packages','tasks':'Tasks','planning':'Planning & calendar','knowledge':'Knowledge & reading','journal':'Journal','meetings':'Meetings','reviews':'Reviews','inbox':'Inbox'}
@@ -45,7 +47,7 @@ def read(path):
 def registry():
     path = SYS / 'config/registry.json'
     if not path.exists():
-        path = SYS / 'config/registry.example.json'
+        path = ASSETS / 'config/registry.example.json'
     return json.loads(path.read_text())
 
 def record_paths():
@@ -132,7 +134,7 @@ def new(typ,title,project,domain=None,work_package=None):
     if typ in ['journal','meetings','reviews','planning']: meta['date']=date
     if typ=='tasks': meta.update(status='proposed',do_date='',due_date='')
     if typ=='knowledge': meta.update(access_level='metadata',agent_reading='not_read',human_reading='unknown')
-    template=(SYS/'templates'/f'{typ}.md').read_text()
+    template=(ASSETS/'templates'/f'{typ}.md').read_text()
     p=W/FOLDERS[typ]/f'{id}.md'
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open('x') as f:
@@ -147,7 +149,7 @@ def build():
     now=dt.datetime.now().astimezone().isoformat(timespec='seconds')
     context = SYS / 'context/current.md'
     if not context.exists():
-        context = SYS / 'context/default.md'
+        context = ASSETS / 'context/default.md'
     current = context.read_text()
     lines=['# Desk Workspace','',f'Generated: {now}. Local workspace index.','', '[Guide](README.md)','',current.replace('# Current context','## Current context',1),'']
     for typ,label in TYPES.items():
@@ -159,8 +161,8 @@ def build():
         lines += ['']
     atomic_write(ROOT/'Home.md','\n'.join(lines))
     data=json.dumps(dict(records=rs,workspace_root=str(ROOT),registry=registry(),presentation=json.loads((SYS/'config/presentation.json').read_text()) if (SYS/'config/presentation.json').exists() else {},updated=now,current=current),ensure_ascii=False).replace('<','\\u003c')
-    template=(SYS/'app/dashboard.template.html').read_text()
-    atomic_write(SYS/'index/dashboard.html',template.replace('__CSS__',(SYS/'app/desk.css').read_text(),1).replace('__JS__',(SYS/'app/desk.js').read_text()+'\n'+(SYS/'app/literature_map.js').read_text(),1).replace('__DATA__',data,1))
+    template=(APP/'dashboard.template.html').read_text()
+    atomic_write(SYS/'index/dashboard.html',template.replace('__CSS__',(APP/'desk.css').read_text(),1).replace('__JS__',(APP/'desk.js').read_text()+'\n'+(APP/'literature_map.js').read_text(),1).replace('__DATA__',data,1))
     atomic_write(SYS/'index/records.json',json.dumps(rs,ensure_ascii=False,indent=2))
     return rs
 
@@ -415,6 +417,14 @@ def snapshot(manifest,output):
         if stage.exists():shutil.rmtree(stage)
     print(f'Created snapshot: {target} ({len(provenance)} files)')
 
+def create_server(port):
+    import literature_jobs
+
+    build()
+    server = LocalServer(('127.0.0.1', port), Handler)
+    literature_jobs.start(sys.modules[__name__])
+    return server
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     s=p.add_subparsers(dest='cmd',required=True)
@@ -449,11 +459,8 @@ def main():
                 raise ValueError('Port is in use by a different application')
             except (OSError,TimeoutError):
                 pass
-        build()
-        srv=LocalServer(('127.0.0.1',args.port),Handler)
-        import literature_jobs,sys
-        literature_jobs.start(sys.modules[__name__])
-        print(f'Desk: http://127.0.0.1:{args.port}',flush=True)
+        srv=create_server(args.port)
+        print(f'Desk: http://127.0.0.1:{srv.server_port}',flush=True)
         if args.cmd=='launch':
             threading.Timer(0.2,lambda:webbrowser.open(address)).start()
         srv.serve_forever()

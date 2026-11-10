@@ -37,11 +37,41 @@ ctx.externalData={export_root:'/tmp/x',sources:[{label:'PAICC',exists:true,manif
  rec({source_id:'pb',kind:'briefing',briefing_kind:'daily',period_start:'2026-11-10',period_end:'2026-11-10',body:'中文 / English'})]},
  {label:'FIC',exists:true,manifest:null,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'fb',kind:'briefing',title:'FIC sample daily'}]}]};
 let paicc=ctx.externalView(),sec=id=>paicc.slice(paicc.indexOf(`id="external-${id}"`),paicc.indexOf('</section>',paicc.indexOf(`id="external-${id}"`)));
-assert(paicc.includes('回复示例')&&paicc.includes('From Sample Sender')&&paicc.includes('Draft reply')&&!paicc.includes('none ·'),'PAICC task fields');
+assert(paicc.includes('回复示例')&&paicc.includes('来自 Sample Sender')&&paicc.includes('Draft reply')&&!paicc.includes('none ·'),'PAICC task fields');
 assert(paicc.includes('Daily briefing · 2026-11-10'),'briefing title from period');
-assert(paicc.includes('>Cancelled<')&&paicc.includes('Join online')&&!paicc.includes('Needs review'),'meeting status and online link');
+assert(paicc.includes('Cancelled 已取消')&&paicc.includes('Join online')&&!paicc.includes('Needs review'),'meeting status and online link');
 assert(sec('finance').includes('FIC sample daily')&&!sec('briefing').includes('FIC sample daily'),'FIC briefings shown under finance');
 assert(paicc.includes('exported'),'generated_at accepted for display');
+// Batch 1: display_title, merged tasks, recurring meetings, bilingual briefing, Today overview.
+const todayISO=ctx.today(),at=h=>{let d=new Date();d.setHours(h,0,0,0);return d.toISOString()};
+ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[
+ rec({source_id:'mt',kind:'task',display_title:'Sample Sender：3 件事',title:'Sample Sender: 3 items',title_zh:'Sample Sender：3 件事',priority:'P2',task_count:3,open_count:2,summary_zh:'示例邮件摘要',link:'message://%3Cm@example.invalid%3E',subtasks:[{source_id:'s1',display_title:'回复示例一',status:'INBOX',priority:'P2'},{source_id:'s2',display_title:'完成示例二',status:'done'},{source_id:'s3',display_title:'示例三',status:'INBOX',deadline_at:at(18)}]}),
+ rec({source_id:'t2',kind:'task',display_title:'登录示例银行',title:'Log in to sample bank',task_count:1,open_count:1,priority:'P1'}),
+ rec({source_id:'t3',kind:'task',display_title:'已完成任务',task_count:1,open_count:0,status:'done'}),
+ rec({source_id:'gm',kind:'meeting',display_title:'Group Meeting',title:'Group Meeting',start_at:at(13),end_at:at(14),location:'Room 1',recurring:true,recurrence_zh:'每周二 13:00',upcoming_count:9,upcoming_starts:[at(13),'2099-01-01T13:00:00Z']}),
+ rec({source_id:'cm',kind:'meeting',display_title:'Seminar',title:'Canceled: Seminar',status:'CANCELLED',start_at:at(15),online_meeting_url:'https://teams.example.invalid/j'}),
+ rec({source_id:'br',kind:'briefing',briefing_kind:'daily',period_start:todayISO,period_end:todayISO,body:'# 今日简报\n\n- 中文要点\n\n———— English ————\n\n- English point'})]},
+ {source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'fd',kind:'finance_daily',title:'演示 Demo · 金融日报 sample',date:todayISO,updated_at:iso}]}]};
+let ov=ctx.todayOverview(),bv=ctx.externalView();
+assert(ov.indexOf('id="overview-brief"')<ov.indexOf('id="overview-meetings"')&&ov.indexOf('id="overview-meetings"')<ov.indexOf('id="overview-tasks"')&&ov.indexOf('id="overview-tasks"')<ov.indexOf('id="overview-finance"'),'overview order');
+let ovBrief=ov.slice(ov.indexOf('id="overview-brief"'),ov.indexOf('id="overview-meetings"'));
+assert(ovBrief.includes('中文要点')&&ovBrief.includes('<summary>English</summary>')&&ovBrief.indexOf('English point')>ovBrief.indexOf('<summary>English</summary>'),'briefing Chinese expanded, English folded');
+assert(ov.includes('每周二 13:00 · 之后还有 8 次')&&ov.includes('Join online')&&ov.includes('已取消'),'today meetings with recurrence, join link, cancelled');
+let ovTasks=ov.slice(ov.indexOf('id="overview-tasks"'),ov.indexOf('id="overview-finance"'));
+assert(ovTasks.includes('Sample Sender：3 件事')&&ovTasks.includes('登录示例银行')&&!ovTasks.includes('已完成任务'),'open task cards only');
+assert(ovTasks.indexOf('登录示例银行')<ovTasks.indexOf('Sample Sender'),'priority order when no deadline');
+assert((ovTasks.match(/external-check/g)||[]).length===3&&(ovTasks.match(/external-check checked/g)||[]).length===1,'read-only subtask checks reflect status');
+assert(ovTasks.includes('示例邮件摘要')&&ovTasks.includes('Open in Mail'),'summary and mail link');
+assert(ov.includes('还没有论文里程碑'),'milestone empty state');
+assert(ov.includes('演示 Demo')&&ov.includes('data-route="finance"'),'finance one-liner links to Finance');
+assert(!/<input|<textarea|contenteditable/.test(ov),'overview has no editing controls');
+assert(bv.includes('>Seminar</h3>')&&bv.includes('Canceled: Seminar'),'display_title main, differing title as subtitle');
+assert(!bv.includes('<div class="external-zh-title">Group Meeting</div>'),'identical subtitle hidden');
+let bvBrief=bv.slice(bv.indexOf('id="external-briefing"'),bv.indexOf('id="external-milestones"'));
+assert(bvBrief.includes('中文要点')&&!/<summary>[^<]*Details<\/summary>/.test(bvBrief),'briefing expanded on Briefing page');
+assert(bv.includes('之后还有 8 次')&&!bv.includes('2099'),'recurring meeting summarised, not listed');
+assert(bv.indexOf('今日日程')<bv.indexOf('Today’s schedule'),'Chinese section titles first');
+assert(bv.includes('class="external-updated"'),'updated time de-emphasised');
 ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[]},{source:'fic',label:'FIC',exists:true,manifest:{schema:1},warnings:['Unsupported schema_version None'],records:[
  {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'d1',kind:'briefing',title:'Old report',date:'2026-11-09',updated_at:'2026-11-09T08:00:00+00:00',body:'# Old'},
  {source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'d2',kind:'finance_daily',title:'New report',date:'2026-11-10',updated_at:'2026-11-10T08:00:00+00:00',body:'# 金融日报\n\n> note\n\n- **Bold** item <img src=x onerror=alert(1)>\n- [ok](https://example.invalid/a) [bad](javascript:alert(1)) [local](file:///x)\n- [ ] not a checkbox'},
@@ -53,7 +83,7 @@ let rev=fin.slice(fin.indexOf('id="finance-review"'),fin.indexOf('id="finance-la
 assert(rev.includes('Sample review')&&rev.includes('Confirmed 已确认')&&!rev.includes('演示 Demo'),'review shown, confirmed, not demo');
 assert(rev.includes('<table>')&&rev.includes('<th>项目</th>')&&rev.includes('A &lt;b&gt;x&lt;/b&gt;')&&rev.includes('<strong>ok</strong>'),'review table rendered and escaped');
 assert(rev.includes('Earlier reviews')&&rev.includes('Draft 草稿'),'older draft review listed');
-assert(fin.includes('Level: L3')&&fin.includes('Rule: sample_rule')&&fin.includes('示例提醒'),'alert fields');
+assert(fin.includes('Level L3')&&fin.includes('Rule sample_rule')&&fin.includes('示例提醒'),'alert fields');
 assert(fin.indexOf('id="finance-alerts"')<fin.indexOf('id="finance-latest"'),'alerts first');
 let latest=fin.slice(fin.indexOf('id="finance-latest"'),fin.indexOf('id="finance-earlier"'));
 assert(latest.includes('New report')&&latest.includes('<strong>Bold</strong>')&&latest.includes('<blockquote>'),'latest report rendered as Markdown');

@@ -31,6 +31,17 @@ assert(html.includes('演示 Demo'),'demo badge kept');
 assert(html.includes('Unsupported schema_version 2'),'schema warning shown');
 assert(html.indexOf('Sync &lt;b&gt;')<html.indexOf('Upcoming')&&html.indexOf('Upcoming')<html.indexOf('Future meeting'),'today before upcoming');
 assert(!/contenteditable|<input|<textarea|data-action="(save|delete)/.test(html),'no editing controls');
+ctx.externalData={export_root:'/tmp/x',sources:[{label:'PAICC',exists:true,manifest:{generated_at:iso},warnings:[],records:[
+ rec({source_id:'pt',kind:'task',title:'Reply to sample',title_zh:'回复示例',status:'INBOX',priority:'P1',deadline_kind:'none',next_action:'Draft reply',email_sender:'Sample Sender',email_subject:'Sample subject',link:'message://%3Cs@example.invalid%3E'}),
+ rec({source_id:'pm',kind:'meeting',title:'Online sync',status:'CANCELLED',start_at:iso,needs_review:false,online_meeting_url:'https://teams.example.invalid/x'}),
+ rec({source_id:'pb',kind:'briefing',briefing_kind:'daily',period_start:'2026-11-10',period_end:'2026-11-10',body:'中文 / English'})]},
+ {label:'FIC',exists:true,manifest:null,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:true,source_id:'fb',kind:'briefing',title:'FIC sample daily'}]}]};
+let paicc=ctx.externalView(),sec=id=>paicc.slice(paicc.indexOf(`id="external-${id}"`),paicc.indexOf('</section>',paicc.indexOf(`id="external-${id}"`)));
+assert(paicc.includes('回复示例')&&paicc.includes('From Sample Sender')&&paicc.includes('Draft reply')&&!paicc.includes('none ·'),'PAICC task fields');
+assert(paicc.includes('Daily briefing · 2026-11-10'),'briefing title from period');
+assert(paicc.includes('>Cancelled<')&&paicc.includes('Join online')&&!paicc.includes('Needs review'),'meeting status and online link');
+assert(sec('finance').includes('FIC sample daily')&&!sec('briefing').includes('FIC sample daily'),'FIC briefings shown under finance');
+assert(paicc.includes('exported'),'generated_at accepted for display');
 ctx.externalData={export_root:'/tmp/x',sources:[{label:'PAICC',exists:false,manifest:null,warnings:[],records:[]},{label:'FIC',exists:false,manifest:null,warnings:[],records:[]}]};
 assert(ctx.externalView().includes('No exported records yet'),'empty state');
 console.log('Briefing view: sections, read-only badges, demo marks, escaping, safe links and empty state passed');

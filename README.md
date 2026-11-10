@@ -6,7 +6,14 @@ Desk is a local research workbench for projects, tasks, meetings, journals and r
 
 Use Python 3.11 or later on macOS or a compatible Unix-like system. This source package was tested on macOS. Desk uses Unix file locks, so native Windows support would require a port.
 
-Download and extract the source archive, or clone the repository once it is published. From the Desk folder, run:
+Download and extract the source archive, or clone the repository.
+
+```sh
+git clone https://github.com/masite123/Desk.git
+cd Desk
+```
+
+From the Desk folder, run the workspace check and start the app.
 
 ```sh
 python3 .system/app/phd.py check
@@ -62,4 +69,4 @@ The source package runs in the browser and uses the Python launch command above.
 
 ## Licensing
 
-Desk's application license is pending the owner's decision. Third-party dependencies retain their own license notices under `.system/app/vendor/`.
+Desk is distributed under the [MIT License](LICENSE). Third-party dependencies retain their own license notices under `.system/app/vendor/`.

@@ -266,6 +266,7 @@ class Handler(BaseHTTPRequestHandler):
         origin=self.headers.get('Origin','')
         if host.split(':')[0] not in ['127.0.0.1','localhost'] or origin!='http://'+host or self.headers.get('X-PhD-Action')!='1':
             return self.send_error(403)
+        if self.path in ['/api/finance/unlock','/api/finance/lock']:return self.finance_post()
         if self.path not in ['/api/actions','/api/zotero/sync','/api/literature/jobs','/api/literature/control','/api/literature/relation','/api/literature/links']:return self.send_error(404)
         try:
             length=int(self.headers.get('Content-Length','0'))
@@ -293,8 +294,31 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,KeyError,TypeError) as e:self.json_error(400,str(e))
         except RuntimeError as e:self.json_error(409,str(e))
         except Exception:self.json_error(500,'Could not save. Your draft is still in the form.')
-    def json_error(self,status,message):
-        data=json.dumps({'error':message}).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+    def json_error(self,status,message,body=None,cookie=None):
+        data=json.dumps(body if body is not None else {'error':message}).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store')
+        if cookie:self.send_header('Set-Cookie',cookie)
+        self.end_headers();self.wfile.write(data)
+    def finance_token(self):
+        from http.cookies import SimpleCookie
+        import external_feeds
+        try:jar=SimpleCookie(self.headers.get('Cookie',''))
+        except Exception:return None
+        return jar[external_feeds.COOKIE].value if external_feeds.COOKIE in jar else None
+    def finance_post(self):
+        # Finance lock (FD-043). The password is only hashed and compared; it is never logged or stored.
+        import external_feeds
+        base=external_feeds.COOKIE+'={}; Path=/; HttpOnly; SameSite=Strict'
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if length<0 or length>4096:raise ValueError
+            payload=json.loads(self.rfile.read(length) or b'{}')
+            if not isinstance(payload,dict):raise ValueError
+        except (ValueError,TypeError):return self.json_error(400,'Invalid request')
+        if self.path.endswith('/lock'):
+            external_feeds.relock(self.finance_token())
+            return self.json_error(200,None,{'locked':True},base.format('')+'; Max-Age=0')
+        status,body,token=external_feeds.unlock(payload.get('password'))
+        return self.json_error(status,None,body,base.format(token) if token else None)
 
     def do_GET(self):
         if self.headers.get('Host','').split(':')[0] not in ['127.0.0.1','localhost']: return self.send_error(403)
@@ -320,12 +344,19 @@ class Handler(BaseHTTPRequestHandler):
                 mod=sys.modules[__name__]
                 result=graph.projection(mod) if url.path.endswith('/graph') else jobs.jobs(mod)
                 return self.send_bytes(json.dumps(result,ensure_ascii=False).encode(),'application/json')
-            if url.path=='/api/external':
+            if url.path in ['/api/external','/api/external/fic','/api/finance/status']:
                 # Read-only companion exports (PAICC/FIC). Served only here: never merged into
-                # records(), generated index files or literature agent prompts.
+                # records(), generated index files or literature agent prompts. FIC is locked
+                # server-side until a valid finance session cookie is presented.
                 if self.headers.get('Sec-Fetch-Site','same-origin') not in ['same-origin','none']:return self.send_error(403)
                 import external_feeds
-                return self.send_bytes(json.dumps(external_feeds.snapshot(),ensure_ascii=False).encode(),'application/json; charset=utf-8')
+                token=self.finance_token()
+                if url.path=='/api/finance/status':result=external_feeds.lock_status(token)
+                elif url.path=='/api/external/fic':
+                    if external_feeds.lock_status(token)['locked']:return self.json_error(401,None,{'locked':True})
+                    result=external_feeds.load_source('fic')
+                else:result=external_feeds.guarded_snapshot(token)
+                return self.send_bytes(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
             if url.path=='/api/records':
                 rs=records()
                 return self.send_bytes(json.dumps(rs,ensure_ascii=False).encode(),'application/json; charset=utf-8')

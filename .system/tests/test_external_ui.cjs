@@ -110,4 +110,19 @@ assert(sched.includes('Weekly sample')&&sched.includes(hm(stamp(0,14))),'briefin
 assert(o.includes('Report newer')&&!o.includes('Report older'),'today finance link uses newest report date');
 let f=ctx.financeView(),latest=f.slice(f.indexOf('id="finance-latest"'),f.indexOf('id="finance-earlier"'));
 assert(latest.includes('Report newer')&&f.slice(f.indexOf('id="finance-earlier"')).includes('Report older'),'re-exported older report stays in earlier reports');}
+// Finance lock: locked views show only the lock, never FIC titles or counts.
+{ctx.externalData={export_root:'/tmp/x',finance_locked:true,sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[rec({source_id:'pt1',kind:'task',display_title:'普通任务'})]},{source:'fic',label:'FIC',locked:true,exists:null,manifest:null,warnings:[],records:[]}]};
+vm.runInContext("financeStatus={locked:true,configured:true,retry_after:0,idle_minutes:15,reset_hint:'desk lock set'};financeMessage=''",ctx);
+let fv=ctx.financeView();
+assert(fv.includes('id="finance-unlock"')&&fv.includes('type="password"')&&fv.includes('金融内容已锁定'),'locked Finance shows password form');
+assert(!/records?\b|条|Latest daily|持仓|Holdings/.test(fv.replace(/<form[\s\S]*<\/form>/,'')),'locked Finance reveals no titles or counts');
+assert(!fv.includes('data-action="finance-lock"'),'no Lock button while locked');
+let bv=ctx.externalView();assert(bv.includes('金融内容已锁定')&&!bv.includes('id="external-learning"')&&!bv.includes('FIC 0'),'Briefing finance section locked');
+let ov=ctx.todayOverview();assert(ov.includes('金融内容已锁定')&&ov.includes('普通任务'),'Today finance locked, PAICC still shown');
+vm.runInContext("financeStatus={locked:true,configured:false,retry_after:0,reset_hint:'uv run python -m app.finance.cli desk lock set'}",ctx);
+let nc=ctx.financeView();assert(nc.includes('还没有设置金融密码')&&nc.includes('desk lock set')&&/<input[^>]*disabled/.test(nc),'unconfigured hint, input disabled');
+vm.runInContext("financeStatus={locked:true,configured:true,retry_after:240}",ctx);
+assert(ctx.financeView().includes('请 4 分钟后再试'),'lockout countdown');
+ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓 2026-11-11',date:'2026-11-11',body:'| 账户 | 金额 CNY |\n|---|---|\n| A | 1 |'}]}]};
+ctx.pageHeading=(t,a='')=>`<h1>${t}</h1>${a}`;let un=ctx.financeView();assert(un.includes('data-action="finance-lock"')&&un.includes('id="finance-holdings"')&&un.includes('<th>金额 CNY</th>'),'unlocked shows Lock button and holdings table');}
 console.log('Briefing view: sections, read-only badges, demo marks, escaping, safe links and empty state passed');

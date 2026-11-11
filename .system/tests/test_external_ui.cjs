@@ -95,4 +95,19 @@ assert(fin.includes('finance-demo-note')&&fin.includes('Unsupported schema_versi
 assert(!/<input|<textarea|contenteditable/.test(fin),'no editing controls');
 ctx.externalData={export_root:'/tmp/x',sources:[{label:'PAICC',exists:false,manifest:null,warnings:[],records:[]},{label:'FIC',exists:false,manifest:null,warnings:[],records:[]}]};
 assert(ctx.externalView().includes('No exported records yet'),'empty state');
+// Codex review: recurring meetings show today's occurrence; daily reports sort by report date.
+{const day=n=>{let d=new Date();d.setDate(d.getDate()+n);return d},stamp=(n,h)=>{let d=day(n);d.setHours(h,0,0,0);return d.toISOString()},hm=x=>new Date(x).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[
+ rec({source_id:'rw',kind:'meeting',display_title:'Weekly sample',start_at:stamp(-7,9),end_at:stamp(-7,10),recurring:true,recurrence_zh:'每周示例',upcoming_count:3,upcoming_starts:[stamp(-7,9),stamp(0,14),stamp(7,14)]})]},
+ {source:'fic',label:'FIC',exists:true,warnings:[],records:[
+  {source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'old',kind:'finance_daily',title:'Report older',date:'2026-11-09',updated_at:'2026-11-11T12:00:00+00:00',body:'old'},
+  {source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'new',kind:'finance_daily',title:'Report newer',date:'2026-11-10',updated_at:'2026-11-10T08:00:00+00:00',body:'new'}]}]};
+let o=ctx.todayOverview(),m=o.slice(o.indexOf('id="overview-meetings"'),o.indexOf('id="overview-milestone"'));
+assert(m.includes(hm(stamp(0,14))+'–'+hm(stamp(0,15)))&&!m.includes(hm(stamp(-7,9))),'today shows the matching occurrence time');
+assert(m.includes('之后还有 1 次'),'remaining count from today’s occurrence');
+let sched=ctx.externalView();sched=sched.slice(sched.indexOf('id="external-schedule"'),sched.indexOf('id="external-tasks"'));
+assert(sched.includes('Weekly sample')&&sched.includes(hm(stamp(0,14))),'briefing schedule uses occurrence too');
+assert(o.includes('Report newer')&&!o.includes('Report older'),'today finance link uses newest report date');
+let f=ctx.financeView(),latest=f.slice(f.indexOf('id="finance-latest"'),f.indexOf('id="finance-earlier"'));
+assert(latest.includes('Report newer')&&f.slice(f.indexOf('id="finance-earlier"')).includes('Report older'),'re-exported older report stays in earlier reports');}
 console.log('Briefing view: sections, read-only badges, demo marks, escaping, safe links and empty state passed');

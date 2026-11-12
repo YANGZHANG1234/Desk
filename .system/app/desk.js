@@ -184,9 +184,9 @@ let financeStatus=null,financeMessage='',externalActivity=Date.now();
 function financeLockedNote(){return `<button class="overview-finance finance-locked" data-route="finance"><span>🔒 金融内容已锁定 · 输入密码查看</span>${I('arrow')}</button>`}
 function financeLockView(){
  let st=financeStatus||{},h=pageHeading('金融 Finance','','已锁定 Locked');
- let note=st.configured===false?`<p class="finance-lock-hint">还没有设置金融密码。在本机运行：<code>${E(st.reset_hint||'desk lock set')}</code></p>`:'';
+ let note=st.configured===false?`<p class="finance-lock-hint">还没有设置金融密码。</p>`:'';
  let wait=st.retry_after>0?`<p class="finance-lock-error" role="alert">尝试次数过多，请 ${Math.ceil(st.retry_after/60)} 分钟后再试。</p>`:'';
- return h+`<section class="finance-lock" aria-label="Finance locked"><div class="finance-lock-icon" aria-hidden="true">🔒</div><h2>金融内容已锁定</h2><p class="tiny-label">输入密码解锁。空闲 ${E(st.idle_minutes||15)} 分钟或 Desk 重启后会自动重新锁定。</p>${note}<form id="finance-unlock" autocomplete="off"><input id="finance-password" type="password" inputmode="numeric" autocomplete="off" maxlength="128" aria-label="Finance password" placeholder="密码 Password" ${st.configured===false||st.retry_after>0?'disabled':''}><button class="btn primary" type="submit" ${st.configured===false||st.retry_after>0?'disabled':''}>解锁 Unlock</button></form>${financeMessage?`<p class="finance-lock-error" role="alert">${E(financeMessage)}</p>`:''}${wait}<p class="finance-lock-hint">忘记密码：在本机运行 <code>${E(st.reset_hint||'desk lock set')}</code> 重新设置，不需要旧密码。</p></section>`;
+ return h+`<section class="finance-lock" aria-label="Finance locked"><div class="finance-lock-icon" aria-hidden="true">🔒</div><h2>金融内容已锁定</h2><p class="tiny-label">输入密码解锁。空闲 ${E(st.idle_minutes||15)} 分钟或 Desk 重启后会自动重新锁定。</p>${note}<form id="finance-unlock" autocomplete="off"><input id="finance-password" type="password" inputmode="numeric" autocomplete="off" maxlength="128" aria-label="Finance password" placeholder="密码 Password" ${st.configured===false||st.retry_after>0?'disabled':''}><button class="btn primary" type="submit" ${st.configured===false||st.retry_after>0?'disabled':''}>解锁 Unlock</button></form>${financeMessage?`<p class="finance-lock-error" role="alert">${E(financeMessage)}</p>`:''}${wait}</section>`;
 }
 let financeRetryTimer=null;
 // After a lockout, re-check when it ends so the form re-enables without a reload.

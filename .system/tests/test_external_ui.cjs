@@ -72,6 +72,15 @@ assert(tickedTasks.includes('data-task-mark="s1" data-done="0"')&&tickedTasks.in
 ctx.taskMarks={t2:'2020-01-01T09:00:00Z'};
 let old=ctx.todayOverview();assert(!old.slice(old.indexOf('id="overview-tasks"')).includes('登录示例银行'),'tasks ticked on an earlier day are hidden');
 ctx.taskMarks={};
+// PAICC re-export of a Desk tick (D-028): COMPLETED + done_in_desk stays clickable and follows Desk's marks.
+{let save=ctx.externalData;ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[
+ rec({source_id:'g',kind:'task',display_title:'示例分组',task_count:2,open_count:1,subtasks:[{source_id:'g1',display_title:'已在 Desk 勾选',status:'COMPLETED',done_in_desk:true},{source_id:'g2',display_title:'未完成',status:'INBOX',done_in_desk:false}]})]}]};
+ ctx.taskMarks={g1:new Date().toISOString()};let o=ctx.todayOverview();
+ assert(o.includes('data-task-mark="g1" data-done="0"')&&o.includes('1/2 未完成'),'desk-ticked export item can be unticked');
+ ctx.taskMarks={};o=ctx.todayOverview();
+ assert(o.includes('data-task-mark="g1" data-done="1"')&&o.includes('还剩 2 件待办'),'unticked before the next export shows as open');
+ ctx.taskMarks={};ctx.externalData=save;}
+
 assert(ovTasks.includes('示例邮件摘要')&&ovTasks.includes('Open in Mail'),'summary and mail link');
 assert(ov.includes('还没有论文里程碑'),'milestone empty state');
 assert(ov.includes('演示 Demo')&&ov.includes('data-route="finance"'),'finance one-liner links to Finance');

@@ -227,6 +227,7 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(goal.includes('25.0%')&&goal.includes('width:25.00%')&&goal.includes('750,000')&&goal.includes('364 天')&&goal.includes('还需增长 <b>300.0%</b>（年化 301.2%）')&&goal.includes('示例说明'),'goal figures');
  assert(!/买|卖|buy|sell|交易|trade/i.test(goal.replace(/<[^>]+>/g,'')),'no trade wording');
  assert(v.includes('高于当前图表范围')&&!/stroke-dasharray="5 4"/.test(v),'far target noted, not drawn');
+ cd.goal.target='100';v=view();assert(v.includes('低于当前图表范围')&&!v.includes('高于当前图表范围'),'far-below target says below');
  cd.goal.target='250500';v=view();assert(/stroke-dasharray="5 4"/.test(v)&&v.includes('虚线 = 目标'),'near target drawn as dashed line');
  let f=view({goal:true});assert(!f.slice(f.indexOf('data-fin-panel="goal"'),f.indexOf('data-fin-panel="trend"')).match(/750,000|250,500|25\.0%/),'folded goal renders no amounts');
  cd.goal=null;assert(!view().includes('data-fin-panel="goal"'),'no goal, no panel');

@@ -137,7 +137,7 @@ assert((hold.match(/class="fin-arc"/g)||[]).length===9&&hold.includes('stroke="#
 assert(hold.includes('类别0')&&hold.includes('30.0%')&&hold.includes('8.8%'),'legend shows label_zh and weight');
 assert(hold.includes('地区分布')&&hold.includes('账户分布')&&hold.includes('币种分布')&&hold.includes('各类浮盈亏')&&hold.includes('最大亏损 Top 10'),'all chart cards present');
 let losses=hold.slice(hold.indexOf('最大亏损'));assert(losses.includes('Loss 9')&&!losses.includes('Loss 10'),'top losses capped at 10');
-assert(hold.includes('−50')&&hold.includes('+80')&&hold.includes(`right:50%`)&&hold.includes(`left:50%`),'signed diverging bars');
+assert(hold.includes('−50')&&hold.includes('+80')&&hold.includes(`left:auto;right:50%`)&&hold.includes(`left:50%`),'signed diverging bars');
 assert(!hold.includes('<b>Acct</b>')&&hold.includes('&lt;b&gt;Acct'),'labels escaped');
 assert(hold.includes('持仓明细 Details')&&(hold.match(/表格 Table/g)||[]).length===6,'detail table collapsed, every chart has a table view');
 assert(!/<script|https?:\/\/(?!example)/.test(hold.replace(/xmlns="[^"]*"/g,'')),'no external resources');
@@ -147,3 +147,14 @@ assert(rev.indexOf('较早事项')<rev.indexOf('较晚事项')&&rev.indexOf('较
 assert((rev.match(/external-check checked/g)||[]).length===1&&rev.includes('复盘全文'),'done follow-up checked; full text folded');
 assert(!rev.includes('<i>x</i>'),'views escaped');}
 console.log('Briefing view: sections, read-only badges, demo marks, escaping, safe links and empty state passed');
+
+// Codex PR#2: lockout expiry re-enables the form; UI idle timeout revokes the server session.
+(async()=>{
+ let timers=[],calls=0;ctx.setTimeout=(f,ms)=>{timers.push([f,ms]);return timers.length};ctx.clearTimeout=()=>{};ctx.render=()=>{};
+ ctx.fetch=async()=>({json:async()=>(++calls===1?{locked:true,retry_after:120}:{locked:true,retry_after:0})});
+ await ctx.financeRefreshStatus();
+ assert(timers.length===1&&timers[0][1]===120500,'refresh scheduled when lockout ends');
+ await timers[0][0]();assert.equal(vm.runInContext("financeStatus",ctx).retry_after,0,'status refreshed after lockout');assert.equal(timers.length,1,'no timer once unlocked');
+ assert(/setInterval\(\(\)=>\{if\(externalData&&!externalData\.finance_locked&&Date\.now\(\)-externalActivity>15\*60\*1000\)financeLock\(\)\}/.test(src),'idle timeout calls financeLock, not loadExternal');
+ console.log('Finance lock: lockout expiry and idle revoke passed');
+})().catch(e=>{console.error(e);process.exit(1)});

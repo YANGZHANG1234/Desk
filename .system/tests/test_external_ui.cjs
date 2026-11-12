@@ -3,7 +3,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const src=fs.readFileSync('.system/app/desk.js','utf8');
 const ctx={E:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I:()=>'',localDate:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,dateText:d=>d,route:'briefing'};
 ctx.today=()=>ctx.localDate(new Date());ctx.pageHeading=t=>`<h1>${t}</h1>`;vm.createContext(ctx);
-vm.runInContext(src.slice(src.indexOf('let externalData='),src.indexOf('async function loadExternal(')).replace('let externalData=null,externalState=\'idle\';','var externalData=null,externalState=\'idle\';'),ctx);
+vm.runInContext(src.slice(src.indexOf('let externalData='),src.indexOf('async function loadExternal(')).replace(/^let externalData=/m,'var externalData=').replace(/,taskMarks=\{\},externalLoadedAt=0;/,';var taskMarks={},externalLoadedAt=0;'),ctx);
 const now=new Date(),iso=new Date(now.getTime()+3600e3).toISOString(),later=new Date(now.getTime()+3*864e5).toISOString();
 const rec=(o)=>({source:'paicc',source_label:'PAICC',read_only:true,demo:false,updated_at:iso,...o});
 ctx.externalData={export_root:'/tmp/x',sources:[
@@ -60,7 +60,18 @@ assert(ov.includes('每周二 13:00 · 之后还有 8 次')&&ov.includes('Join o
 let ovTasks=ov.slice(ov.indexOf('id="overview-tasks"'),ov.indexOf('id="overview-finance"'));
 assert(ovTasks.includes('Sample Sender：3 件事')&&ovTasks.includes('登录示例银行')&&!ovTasks.includes('已完成任务'),'open task cards only');
 assert(ovTasks.indexOf('登录示例银行')<ovTasks.indexOf('Sample Sender'),'priority order when no deadline');
-assert((ovTasks.match(/external-check/g)||[]).length===3&&(ovTasks.match(/external-check checked/g)||[]).length===1,'read-only subtask checks reflect status');
+assert((ovTasks.match(/external-check/g)||[]).length===4&&(ovTasks.match(/external-check checked/g)||[]).length===1,'3 subtask checks + 1 single-task check; mail-assistant done stays checked');
+// Ticking: open PAICC tasks get real buttons; a task PAICC already closed stays a read-only tick.
+assert((ovTasks.match(/<button type="button" class="external-check" data-task-mark="(s1|s3|t2)"/g)||[]).length===3,'open tasks are clickable');
+assert(!ovTasks.includes('data-task-mark="s2"')&&ovTasks.includes('aria-label="Done (read-only)"'),'source-done subtask not clickable');
+assert(ovTasks.includes('data-task-mark="s1,s3" data-done="1"')&&ovTasks.includes('还剩 3 件待办'),'mark-all and remaining count');
+ctx.taskMarks={s1:new Date().toISOString(),t2:new Date().toISOString()};
+let ticked=ctx.todayOverview(),tickedTasks=ticked.slice(ticked.indexOf('id="overview-tasks"'),ticked.indexOf('id="overview-finance"'));
+assert(tickedTasks.includes('还剩 1 件待办')&&tickedTasks.includes('今天完成 2 件')&&tickedTasks.includes('1/3 未完成'),'counts follow Desk marks');
+assert(tickedTasks.includes('data-task-mark="s1" data-done="0"')&&tickedTasks.includes('overview-task is-done'),'ticked today stays visible and can be unticked');
+ctx.taskMarks={t2:'2020-01-01T09:00:00Z'};
+let old=ctx.todayOverview();assert(!old.slice(old.indexOf('id="overview-tasks"')).includes('登录示例银行'),'tasks ticked on an earlier day are hidden');
+ctx.taskMarks={};
 assert(ovTasks.includes('示例邮件摘要')&&ovTasks.includes('Open in Mail'),'summary and mail link');
 assert(ov.includes('还没有论文里程碑'),'milestone empty state');
 assert(ov.includes('演示 Demo')&&ov.includes('data-route="finance"'),'finance one-liner links to Finance');

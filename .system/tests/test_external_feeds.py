@@ -1,5 +1,5 @@
 """Read-only PAICC/FIC export integration. All sample data below is fabricated."""
-import ast, hashlib, hmac, http.client, json, os, shutil, sys, tempfile, threading, unittest
+import ast, hashlib, hmac, http.client, json, os, shutil, stat, sys, tempfile, threading, unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -319,3 +319,45 @@ class FinanceLockTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TaskMarkTests(unittest.TestCase):
+    """Ticking a task writes only its id to Desk's own marks file, never into the exports."""
+    def setUp(self):
+        FinanceLockTests.setUp(self)
+        self.marks = self.root / 'state/task-marks.json'
+        self.old_marks = os.environ.get('DESK_TASK_MARKS'); os.environ['DESK_TASK_MARKS'] = str(self.marks)
+
+    def tearDown(self):
+        if self.old_marks is None: os.environ.pop('DESK_TASK_MARKS', None)
+        else: os.environ['DESK_TASK_MARKS'] = self.old_marks
+        FinanceLockTests.tearDown(self)
+
+    call = FinanceLockTests.call
+
+    def test_tick_and_untick_store_only_ids_outside_exports(self):
+        before = tree_state(self.export)
+        status, body, _ = self.call('POST', '/api/task-marks', {'ids': ['task-1', 'task-2'], 'done': True})
+        self.assertEqual(status, 200); self.assertEqual(sorted(json.loads(body)['done']), ['task-1', 'task-2'])
+        self.assertEqual(tree_state(self.export), before, 'exports untouched')
+        self.assertEqual(stat.S_IMODE(self.marks.stat().st_mode), 0o600)
+        saved = json.loads(self.marks.read_text())
+        self.assertEqual(set(saved), {'schema_version', 'source', 'kind', 'updated_at', 'done'})
+        self.assertEqual(sorted(saved['done']), ['task-1', 'task-2'])
+        status, body, _ = self.call('POST', '/api/task-marks', {'ids': ['task-1'], 'done': False})
+        self.assertEqual(list(json.loads(body)['done']), ['task-2'])
+        status, body, _ = self.call('GET', '/api/task-marks')
+        self.assertEqual(list(json.loads(body)['done']), ['task-2'])
+
+    def test_rejects_bad_requests(self):
+        for payload in ({'ids': ['../x'], 'done': True}, {'ids': [], 'done': True}, {'ids': ['a'], 'done': 'yes'}, {'ids': 'a', 'done': True}):
+            self.assertEqual(self.call('POST', '/api/task-marks', payload)[0], 400, payload)
+        c = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=10)
+        c.request('POST', '/api/task-marks', body='{"ids":["a"],"done":true}', headers={'Host': f'127.0.0.1:{self.server.server_port}', 'Content-Type': 'application/json'})
+        self.assertEqual(c.getresponse().status, 403, 'needs the Desk origin and action header')
+        self.assertFalse(self.marks.exists())
+
+    def test_marks_module_never_touches_exports(self):
+        text = (APP / 'task_marks.py').read_text()
+        for needle in ('external_feeds', 'desk-export', 'PAICC', 'EXPORT_ROOT', 'urllib', 'socket', 'subprocess'):
+            self.assertNotIn(needle, text)

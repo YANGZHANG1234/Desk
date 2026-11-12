@@ -267,6 +267,7 @@ class Handler(BaseHTTPRequestHandler):
         if host.split(':')[0] not in ['127.0.0.1','localhost'] or origin!='http://'+host or self.headers.get('X-PhD-Action')!='1':
             return self.send_error(403)
         if self.path in ['/api/finance/unlock','/api/finance/lock']:return self.finance_post()
+        if self.path=='/api/task-marks':return self.task_marks_post()
         if self.path not in ['/api/actions','/api/zotero/sync','/api/literature/jobs','/api/literature/control','/api/literature/relation','/api/literature/links']:return self.send_error(404)
         try:
             length=int(self.headers.get('Content-Length','0'))
@@ -298,6 +299,18 @@ class Handler(BaseHTTPRequestHandler):
         data=json.dumps(body if body is not None else {'error':message}).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store')
         if cookie:self.send_header('Set-Cookie',cookie)
         self.end_headers();self.wfile.write(data)
+    def task_marks_post(self):
+        # Ticking a PAICC task stores only its id in Desk's own state file; exports stay untouched.
+        import task_marks
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if length<1 or length>8192:raise ValueError('Invalid request size')
+            payload=json.loads(self.rfile.read(length))
+            if not isinstance(payload,dict):raise ValueError('Invalid request')
+            marks=task_marks.set_done(payload.get('ids'),payload.get('done'))
+        except (ValueError,TypeError) as e:return self.json_error(400,str(e))
+        except OSError:return self.json_error(500,'Could not save the mark.')
+        self.send_bytes(json.dumps({'done':marks}).encode(),'application/json')
     def finance_token(self):
         from http.cookies import SimpleCookie
         import external_feeds
@@ -357,6 +370,9 @@ class Handler(BaseHTTPRequestHandler):
                     result=external_feeds.load_source('fic')
                 else:result=external_feeds.guarded_snapshot(token)
                 return self.send_bytes(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            if url.path=='/api/task-marks':
+                import task_marks
+                return self.send_bytes(json.dumps({'done':task_marks.load()}).encode(),'application/json')
             if url.path=='/api/records':
                 rs=records()
                 return self.send_bytes(json.dumps(rs,ensure_ascii=False).encode(),'application/json; charset=utf-8')

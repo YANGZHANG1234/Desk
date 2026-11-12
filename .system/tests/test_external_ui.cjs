@@ -3,7 +3,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const src=fs.readFileSync('.system/app/desk.js','utf8');
 const ctx={E:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I:()=>'',localDate:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,dateText:d=>d,route:'briefing'};
 ctx.today=()=>ctx.localDate(new Date());ctx.pageHeading=t=>`<h1>${t}</h1>`;vm.createContext(ctx);
-vm.runInContext(src.slice(src.indexOf('let externalData='),src.indexOf('async function loadExternal(')).replace('let externalData=null,externalState=\'idle\';','var externalData=null,externalState=\'idle\';'),ctx);
+vm.runInContext(src.slice(src.indexOf('let externalData='),src.indexOf('async function loadExternal(')).replace(/^let externalData=/m,'var externalData=').replace(/,taskMarks=\{\},externalLoadedAt=0;/,';var taskMarks={},externalLoadedAt=0;'),ctx);
 const now=new Date(),iso=new Date(now.getTime()+3600e3).toISOString(),later=new Date(now.getTime()+3*864e5).toISOString();
 const rec=(o)=>({source:'paicc',source_label:'PAICC',read_only:true,demo:false,updated_at:iso,...o});
 ctx.externalData={export_root:'/tmp/x',sources:[
@@ -60,7 +60,27 @@ assert(ov.includes('每周二 13:00 · 之后还有 8 次')&&ov.includes('Join o
 let ovTasks=ov.slice(ov.indexOf('id="overview-tasks"'),ov.indexOf('id="overview-finance"'));
 assert(ovTasks.includes('Sample Sender：3 件事')&&ovTasks.includes('登录示例银行')&&!ovTasks.includes('已完成任务'),'open task cards only');
 assert(ovTasks.indexOf('登录示例银行')<ovTasks.indexOf('Sample Sender'),'priority order when no deadline');
-assert((ovTasks.match(/external-check/g)||[]).length===3&&(ovTasks.match(/external-check checked/g)||[]).length===1,'read-only subtask checks reflect status');
+assert((ovTasks.match(/external-check/g)||[]).length===4&&(ovTasks.match(/external-check checked/g)||[]).length===1,'3 subtask checks + 1 single-task check; mail-assistant done stays checked');
+// Ticking: open PAICC tasks get real buttons; a task PAICC already closed stays a read-only tick.
+assert((ovTasks.match(/<button type="button" class="external-check" data-task-mark="(s1|s3|t2)"/g)||[]).length===3,'open tasks are clickable');
+assert(!ovTasks.includes('data-task-mark="s2"')&&ovTasks.includes('aria-label="Done (read-only)"'),'source-done subtask not clickable');
+assert(ovTasks.includes('data-task-mark="s1,s3" data-done="1"')&&ovTasks.includes('还剩 3 件待办'),'mark-all and remaining count');
+ctx.taskMarks={s1:new Date().toISOString(),t2:new Date().toISOString()};
+let ticked=ctx.todayOverview(),tickedTasks=ticked.slice(ticked.indexOf('id="overview-tasks"'),ticked.indexOf('id="overview-finance"'));
+assert(tickedTasks.includes('还剩 1 件待办')&&tickedTasks.includes('今天完成 2 件')&&tickedTasks.includes('1/3 未完成'),'counts follow Desk marks');
+assert(tickedTasks.includes('data-task-mark="s1" data-done="0"')&&tickedTasks.includes('overview-task is-done'),'ticked today stays visible and can be unticked');
+ctx.taskMarks={t2:'2020-01-01T09:00:00Z'};
+let old=ctx.todayOverview();assert(!old.slice(old.indexOf('id="overview-tasks"')).includes('登录示例银行'),'tasks ticked on an earlier day are hidden');
+ctx.taskMarks={};
+// PAICC re-export of a Desk tick (D-028): COMPLETED + done_in_desk stays clickable and follows Desk's marks.
+{let save=ctx.externalData;ctx.externalData={export_root:'/tmp/x',sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[
+ rec({source_id:'g',kind:'task',display_title:'示例分组',task_count:2,open_count:1,subtasks:[{source_id:'g1',display_title:'已在 Desk 勾选',status:'COMPLETED',done_in_desk:true},{source_id:'g2',display_title:'未完成',status:'INBOX',done_in_desk:false}]})]}]};
+ ctx.taskMarks={g1:new Date().toISOString()};let o=ctx.todayOverview();
+ assert(o.includes('data-task-mark="g1" data-done="0"')&&o.includes('1/2 未完成'),'desk-ticked export item can be unticked');
+ ctx.taskMarks={};o=ctx.todayOverview();
+ assert(o.includes('data-task-mark="g1" data-done="1"')&&o.includes('还剩 2 件待办'),'unticked before the next export shows as open');
+ ctx.taskMarks={};ctx.externalData=save;}
+
 assert(ovTasks.includes('示例邮件摘要')&&ovTasks.includes('Open in Mail'),'summary and mail link');
 assert(ov.includes('还没有论文里程碑'),'milestone empty state');
 assert(ov.includes('演示 Demo')&&ov.includes('data-route="finance"'),'finance one-liner links to Finance');
@@ -158,4 +178,18 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  await timers[0][0]();assert.equal(vm.runInContext("financeStatus",ctx).retry_after,0,'status refreshed after lockout');assert.equal(timers.length,1,'no timer once unlocked');
  assert(/setInterval\(\(\)=>\{if\(externalData&&!externalData\.finance_locked&&Date\.now\(\)-externalActivity>15\*60\*1000\)financeLock\(\)\}/.test(src),'idle timeout calls financeLock, not loadExternal');
  console.log('Finance lock: lockout expiry and idle revoke passed');
+})().catch(e=>{console.error(e);process.exit(1)});
+
+// Codex PR#3: overlapping ticks are saved one at a time and none is lost.
+(async()=>{
+ const seg=src.slice(src.indexOf('let taskMarkQueue='),src.indexOf("document.addEventListener('click',e=>{let b=e.target.closest?.('[data-task-mark]')"));
+ const c={render(){},alert(){},Date,taskMarks:{}},server={},inflight=[];let maxInflight=0,open=0;
+ c.fetch=(url,opt)=>new Promise(res=>{open++;maxInflight=Math.max(maxInflight,open);inflight.push(()=>{open--;let op=JSON.parse(opt.body);op.ids.forEach(id=>{if(op.done)server[id]='t';else delete server[id]});res({ok:true,json:async()=>({done:{...server}})})})});
+ vm.createContext(c);vm.runInContext(seg.replace(/^let taskMarkQueue=/,'var taskMarkQueue=')+';this.toggle=toggleTaskMark;this.marks=()=>taskMarks;',c);
+ c.toggle(['a'],true);c.toggle(['b'],true);
+ assert.deepEqual(Object.keys(c.marks()).sort(),['a','b'],'both ticks shown at once');
+ while(inflight.length){inflight.shift()();await new Promise(r=>setImmediate(r))}
+ assert.equal(maxInflight,1,'one save at a time');
+ assert.deepEqual(Object.keys(c.marks()).sort(),['a','b'],'no tick lost after replies');
+ console.log('Task marks: serialized saves passed');
 })().catch(e=>{console.error(e);process.exit(1)});

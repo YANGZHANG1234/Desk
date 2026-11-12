@@ -170,3 +170,17 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(/setInterval\(\(\)=>\{if\(externalData&&!externalData\.finance_locked&&Date\.now\(\)-externalActivity>15\*60\*1000\)financeLock\(\)\}/.test(src),'idle timeout calls financeLock, not loadExternal');
  console.log('Finance lock: lockout expiry and idle revoke passed');
 })().catch(e=>{console.error(e);process.exit(1)});
+
+// Codex PR#3: overlapping ticks are saved one at a time and none is lost.
+(async()=>{
+ const seg=src.slice(src.indexOf('let taskMarkQueue='),src.indexOf("document.addEventListener('click',e=>{let b=e.target.closest?.('[data-task-mark]')"));
+ const c={render(){},alert(){},Date,taskMarks:{}},server={},inflight=[];let maxInflight=0,open=0;
+ c.fetch=(url,opt)=>new Promise(res=>{open++;maxInflight=Math.max(maxInflight,open);inflight.push(()=>{open--;let op=JSON.parse(opt.body);op.ids.forEach(id=>{if(op.done)server[id]='t';else delete server[id]});res({ok:true,json:async()=>({done:{...server}})})})});
+ vm.createContext(c);vm.runInContext(seg.replace(/^let taskMarkQueue=/,'var taskMarkQueue=')+';this.toggle=toggleTaskMark;this.marks=()=>taskMarks;',c);
+ c.toggle(['a'],true);c.toggle(['b'],true);
+ assert.deepEqual(Object.keys(c.marks()).sort(),['a','b'],'both ticks shown at once');
+ while(inflight.length){inflight.shift()();await new Promise(r=>setImmediate(r))}
+ assert.equal(maxInflight,1,'one save at a time');
+ assert.deepEqual(Object.keys(c.marks()).sort(),['a','b'],'no tick lost after replies');
+ console.log('Task marks: serialized saves passed');
+})().catch(e=>{console.error(e);process.exit(1)});

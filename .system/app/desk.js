@@ -210,14 +210,22 @@ async function financeUnlock(password){
 async function financeLock(){try{await fetch('/api/finance/lock',{method:'POST',headers:{'Content-Type':'application/json','X-PhD-Action':'1'},body:'{}'})}catch{}externalData=null;await loadExternal()}
 async function loadExternal(){
  externalState='loading';if(['today','briefing','finance'].includes(route)&&!externalData)render();
- try{let [response,marks]=await Promise.all([fetch('/api/external',{headers:{'Accept':'application/json'}}),fetch('/api/task-marks').catch(()=>null)]);if(marks?.ok)taskMarks=(await marks.json()).done||{};externalLoadedAt=Date.now();if(!response.ok)throw Error('HTTP '+response.status);externalData=await response.json();externalState='ready';if(externalData.finance_locked)await financeRefreshStatus()}catch(e){externalState='error'}
+ try{let [response,marks]=await Promise.all([fetch('/api/external',{headers:{'Accept':'application/json'}}),fetch('/api/task-marks').catch(()=>null)]);if(marks?.ok)taskMarks=taskMarksWithPending((await marks.json()).done||{});externalLoadedAt=Date.now();if(!response.ok)throw Error('HTTP '+response.status);externalData=await response.json();externalState='ready';if(externalData.finance_locked)await financeRefreshStatus()}catch(e){externalState='error'}
  if(['today','briefing','finance'].includes(route))render();
 }
-async function toggleTaskMark(ids,done){
- let before={...taskMarks},now=new Date().toISOString();ids.forEach(id=>{if(done)taskMarks[id]=taskMarks[id]||now;else delete taskMarks[id]});render();
- try{let r=await fetch('/api/task-marks',{method:'POST',headers:{'Content-Type':'application/json','X-PhD-Action':'1'},body:JSON.stringify({ids,done})});if(!r.ok)throw Error();taskMarks=(await r.json()).done||{}}
- catch{taskMarks=before;alert('没能保存完成状态，请再试一次。 Could not save.')}
- render();
+// Saves run one at a time; each server reply is the new base, with still-queued ticks laid on top,
+// so an older reply or a failed save never wipes a newer tick.
+let taskMarkQueue=[],taskMarkSaving=false;
+function taskMarksWithPending(base){let m={...base},now=new Date().toISOString();for(let {ids,done} of taskMarkQueue)ids.forEach(id=>{if(done)m[id]=m[id]||now;else delete m[id]});return m}
+function toggleTaskMark(ids,done){taskMarkQueue.push({ids,done});taskMarks=taskMarksWithPending(taskMarks);render();if(!taskMarkSaving)saveTaskMarks()}
+async function saveTaskMarks(){
+ taskMarkSaving=true;let failed=false;
+ while(taskMarkQueue.length){let op=taskMarkQueue[0],base=null;
+  try{let r=await fetch('/api/task-marks',{method:'POST',headers:{'Content-Type':'application/json','X-PhD-Action':'1'},body:JSON.stringify(op)});if(!r.ok)throw Error();base=(await r.json()).done||{}}
+  catch{failed=true;try{let r=await fetch('/api/task-marks');if(r.ok)base=(await r.json()).done||{}}catch{}}
+  taskMarkQueue.shift();if(base)taskMarks=taskMarksWithPending(base);else op.ids.forEach(id=>{if(op.done)delete taskMarks[id];else taskMarks[id]=taskMarks[id]||new Date().toISOString()})
+  render()}
+ taskMarkSaving=false;if(failed)alert('有一项完成状态没能保存，请再试一次。 Could not save a tick.');
 }
 document.addEventListener('click',e=>{let b=e.target.closest?.('[data-task-mark]');if(!b)return;e.preventDefault();toggleTaskMark(b.dataset.taskMark.split(',').filter(Boolean),b.dataset.done==='1')});
 // Coming back to Desk after a while picks up PAICC's newest export (it refreshes from your mail during the day).

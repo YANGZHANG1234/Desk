@@ -110,4 +110,52 @@ assert(sched.includes('Weekly sample')&&sched.includes(hm(stamp(0,14))),'briefin
 assert(o.includes('Report newer')&&!o.includes('Report older'),'today finance link uses newest report date');
 let f=ctx.financeView(),latest=f.slice(f.indexOf('id="finance-latest"'),f.indexOf('id="finance-earlier"'));
 assert(latest.includes('Report newer')&&f.slice(f.indexOf('id="finance-earlier"')).includes('Report older'),'re-exported older report stays in earlier reports');}
+// Finance lock: locked views show only the lock, never FIC titles or counts.
+{ctx.externalData={export_root:'/tmp/x',finance_locked:true,sources:[{source:'paicc',label:'PAICC',exists:true,warnings:[],records:[rec({source_id:'pt1',kind:'task',display_title:'普通任务'})]},{source:'fic',label:'FIC',locked:true,exists:null,manifest:null,warnings:[],records:[]}]};
+vm.runInContext("financeStatus={locked:true,configured:true,retry_after:0,idle_minutes:15,reset_hint:'desk lock set'};financeMessage=''",ctx);
+let fv=ctx.financeView();
+assert(fv.includes('id="finance-unlock"')&&fv.includes('type="password"')&&fv.includes('金融内容已锁定'),'locked Finance shows password form');
+assert(!/records?\b|条|Latest daily|持仓|Holdings/.test(fv.replace(/<form[\s\S]*<\/form>/,'')),'locked Finance reveals no titles or counts');
+assert(!fv.includes('data-action="finance-lock"'),'no Lock button while locked');
+assert(!fv.includes('忘记密码')&&!fv.includes('desk lock set'),'no reset instructions on the lock screen');
+let bv=ctx.externalView();assert(bv.includes('金融内容已锁定')&&!bv.includes('id="external-learning"')&&!bv.includes('FIC 0'),'Briefing finance section locked');
+let ov=ctx.todayOverview();assert(ov.includes('金融内容已锁定')&&ov.includes('普通任务'),'Today finance locked, PAICC still shown');
+vm.runInContext("financeStatus={locked:true,configured:false,retry_after:0,reset_hint:'uv run python -m app.finance.cli desk lock set'}",ctx);
+let nc=ctx.financeView();assert(nc.includes('还没有设置金融密码')&&!nc.includes('desk lock set')&&/<input[^>]*disabled/.test(nc),'unconfigured hint, input disabled');
+vm.runInContext("financeStatus={locked:true,configured:true,retry_after:240}",ctx);
+assert(ctx.financeView().includes('请 4 分钟后再试'),'lockout countdown');
+ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓 2026-11-11',date:'2026-11-11',body:'| 账户 | 金额 CNY |\n|---|---|\n| A | 1 |'}]}]};
+ctx.pageHeading=(t,a='')=>`<h1>${t}</h1>${a}`;let un=ctx.financeView();assert(un.includes('data-action="finance-lock"')&&un.includes('id="finance-holdings"')&&un.includes('<th>金额 CNY</th>'),'unlocked shows Lock button and holdings table');}
+// FD-044 charts: values come from chart_data unchanged; views and follow-ups rendered read-only.
+{const cats=Array.from({length:9},(_,i)=>({key:'c'+i,label_zh:'类别'+i,label_en:'Cat '+i,value:100*(9-i),weight:i===0?30:8.75,pnl:i%2?-50*i:40*i,count:i+1}));
+const cd={base:'CNY',total:123456.78,by_category:cats,by_region:[{key:'cn',label_zh:'中国',value:500,weight:60},{key:'us',label_zh:'美国',value:300,weight:40}],by_currency:[{key:'CNY',value:700,weight:70}],by_account:[{account:'<b>Acct</b>',value:400,weight:50}],top_losses:Array.from({length:12},(_,i)=>({name:'Loss '+i,account:'A',pnl:-(i+1)*10,pnl_pct:-(i+1)}))};
+ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[
+ {source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2026-11-11',chart_data:cd,body:'| a | b |\n|---|---|\n| 1 | 2 |'},
+ {source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'r',kind:'finance_review',status:'confirmed',title:'复盘',date:'2026-11-11',body:'全文',views:[{view:'观点甲',why:'理由甲',risk:'风险甲',confidence:'high'},{view:'观点乙',confidence:'低'},{view:'<i>x</i>',confidence:'medium'}],followups:[{done:false,text:'无日期事项',due:null},{done:true,text:'较晚事项',due:'12-01'},{done:false,text:'较早事项',due:'11-15'}]}]}]};
+let f=ctx.financeView(),hold=f.slice(f.indexOf('id="finance-holdings"'),f.indexOf('id="finance-latest"'));
+assert(hold.includes('123,457')&&hold.includes('总值 CNY'),'center total comes from chart_data.total');
+assert((hold.match(/class="fin-arc"/g)||[]).length===9&&hold.includes('stroke="#b9b8b1"'),'nine arcs, ninth folded to neutral gray');
+assert(hold.includes('类别0')&&hold.includes('30.0%')&&hold.includes('8.8%'),'legend shows label_zh and weight');
+assert(hold.includes('地区分布')&&hold.includes('账户分布')&&hold.includes('币种分布')&&hold.includes('各类浮盈亏')&&hold.includes('最大亏损 Top 10'),'all chart cards present');
+let losses=hold.slice(hold.indexOf('最大亏损'));assert(losses.includes('Loss 9')&&!losses.includes('Loss 10'),'top losses capped at 10');
+assert(hold.includes('−50')&&hold.includes('+80')&&hold.includes(`left:auto;right:50%`)&&hold.includes(`left:50%`),'signed diverging bars');
+assert(!hold.includes('<b>Acct</b>')&&hold.includes('&lt;b&gt;Acct'),'labels escaped');
+assert(hold.includes('持仓明细 Details')&&(hold.match(/表格 Table/g)||[]).length===6,'detail table collapsed, every chart has a table view');
+assert(!/<script|https?:\/\/(?!example)/.test(hold.replace(/xmlns="[^"]*"/g,'')),'no external resources');
+let rev=f.slice(f.indexOf('id="finance-review"'),f.indexOf('id="finance-holdings"'));
+assert(rev.includes('Claude 观点')&&rev.includes('信心 高')&&rev.includes('信心 低')&&rev.includes('信心 中')&&rev.includes('理由甲')&&rev.includes('风险甲'),'views with confidence labels');
+assert(rev.indexOf('较早事项')<rev.indexOf('较晚事项')&&rev.indexOf('较晚事项')<rev.indexOf('无日期事项'),'follow-ups sorted by due, null last');
+assert((rev.match(/external-check checked/g)||[]).length===1&&rev.includes('复盘全文'),'done follow-up checked; full text folded');
+assert(!rev.includes('<i>x</i>'),'views escaped');}
 console.log('Briefing view: sections, read-only badges, demo marks, escaping, safe links and empty state passed');
+
+// Codex PR#2: lockout expiry re-enables the form; UI idle timeout revokes the server session.
+(async()=>{
+ let timers=[],calls=0;ctx.setTimeout=(f,ms)=>{timers.push([f,ms]);return timers.length};ctx.clearTimeout=()=>{};ctx.render=()=>{};
+ ctx.fetch=async()=>({json:async()=>(++calls===1?{locked:true,retry_after:120}:{locked:true,retry_after:0})});
+ await ctx.financeRefreshStatus();
+ assert(timers.length===1&&timers[0][1]===120500,'refresh scheduled when lockout ends');
+ await timers[0][0]();assert.equal(vm.runInContext("financeStatus",ctx).retry_after,0,'status refreshed after lockout');assert.equal(timers.length,1,'no timer once unlocked');
+ assert(/setInterval\(\(\)=>\{if\(externalData&&!externalData\.finance_locked&&Date\.now\(\)-externalActivity>15\*60\*1000\)financeLock\(\)\}/.test(src),'idle timeout calls financeLock, not loadExternal');
+ console.log('Finance lock: lockout expiry and idle revoke passed');
+})().catch(e=>{console.error(e);process.exit(1)});

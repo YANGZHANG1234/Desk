@@ -81,6 +81,18 @@ packaging/macos/build.sh /path/to/cpython-3.13.18+20261026-aarch64-apple-darwin-
 
 The DMG and its SHA-256 file are written to `dist/`. The macOS installer includes the browser launcher. Calendar records are local and the installer does not set up notification reminders.
 
+## Finance lock
+
+FIC finance pages in Desk are locked behind a password, checked on the local server. Desk re-locks after 15 idle minutes or a restart; five wrong attempts pause unlocking for 5 minutes.
+
+Set or reset the password (no old password needed) in FIC's backend folder:
+
+```bash
+cd pacc-fic/backend && uv run python -m app.finance.cli desk lock set
+```
+
+This writes the scrypt hash to `~/Library/Application Support/PAICC/desk-lock.json`; Desk reads it on every unlock attempt, so a reset applies at once.
+
 ## Licensing
 
 Desk is distributed under the [MIT License](LICENSE). Third-party dependencies retain their own license notices under `.system/app/vendor/`.

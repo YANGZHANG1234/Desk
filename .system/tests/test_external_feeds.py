@@ -1,5 +1,5 @@
 """Read-only PAICC/FIC export integration. All sample data below is fabricated."""
-import ast, hashlib, http.client, json, os, shutil, sys, tempfile, threading, unittest
+import ast, hashlib, hmac, http.client, json, os, shutil, sys, tempfile, threading, unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -134,7 +134,10 @@ class ExternalFeedTests(unittest.TestCase):
                 self.assertNotIn(needle, text, f'{path.name} must not reference {needle}')
         source = (APP / 'phd.py').read_text(); tree = ast.parse(source)
         users = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and 'external_feeds' in ast.get_source_segment(source, n)]
-        self.assertEqual([n.name for n in users], ['do_GET'])
+        self.assertEqual(sorted(n.name for n in users), ['do_GET', 'finance_post', 'finance_token'])
+        post = ast.get_source_segment(source, next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'finance_post'))
+        for call in ('snapshot', 'load_source', 'guarded_snapshot'):
+            self.assertNotIn(call, post, 'unlock/lock handlers never return records')
         self.assertNotIn('/api/external', ast.get_source_segment(source, next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'do_POST')))
         js = (APP / 'desk.js').read_text()
         self.assertEqual(js.count("'/api/external'"), 1, 'the UI only fetches exports with a plain GET')
@@ -175,13 +178,143 @@ class ExternalFeedTests(unittest.TestCase):
                 r = c.getresponse(); return r.status, r.read()
             status, body = request('GET')
             self.assertEqual(status, 200)
-            self.assertEqual(len(self.all(json.loads(body))), 8)
+            self.assertEqual(len(self.all(json.loads(body))), 5, 'FIC withheld while locked')
             self.assertEqual(request('GET', {'Sec-Fetch-Site': 'cross-site'})[0], 403)
             origin = f'http://127.0.0.1:{server.server_port}'
             self.assertEqual(request('POST', {'Origin': origin, 'X-PhD-Action': '1', 'Content-Type': 'application/json'})[0], 404)
             before = tree_state(self.export); request('GET'); self.assertEqual(tree_state(self.export), before)
         finally:
             server.shutdown(); server.server_close()
+
+
+PASSWORD = '482916'  # fabricated test password
+
+
+def write_lock(path, password=PASSWORD, mode=0o600):
+    salt = os.urandom(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+    path.write_text(json.dumps({'version': 1, 'scope': ['fic'], 'algo': 'scrypt', 'n': 2 ** 14, 'r': 8, 'p': 1, 'dklen': 32,
+                                'salt': salt.hex(), 'hash': digest.hex()}))
+    path.chmod(mode)
+
+
+class FinanceLockTests(unittest.TestCase):
+    FIC_TITLES = ('演示 Finance daily', 'Alert', 'Bond duration basics')
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name).resolve()
+        self.export = fixture(self.root / 'desk-export')
+        record(self.export / 'fic', 'holdings-2026-11-11.md', source='fic', source_id='h1', kind='finance_holdings', title='Holdings', body='| 账户 | CNY |\n|---|---|\n| A | 1 |')
+        self.lock = self.root / 'desk-lock.json'; write_lock(self.lock)
+        self.old = (feeds.EXPORT_ROOT, os.environ.get('DESK_LOCK_FILE'))
+        feeds.EXPORT_ROOT = self.export; os.environ.pop('DESK_LOCK_FILE', None)
+        feeds.relock(); feeds._failures.update(count=0, until=0.0)
+        self.clock = [1000.0]; self.patch = patch.object(feeds, '_now', lambda: self.clock[0]); self.patch.start()
+        self.server = phd.LocalServer(('127.0.0.1', 0), phd.Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.origin = f'http://127.0.0.1:{self.server.server_port}'
+
+    def tearDown(self):
+        self.server.shutdown(); self.server.server_close(); self.patch.stop()
+        feeds.EXPORT_ROOT = self.old[0]; feeds.relock(); feeds._failures.update(count=0, until=0.0)
+        if self.old[1] is not None: os.environ['DESK_LOCK_FILE'] = self.old[1]
+        self.tmp.cleanup()
+
+    def call(self, method, path, body=None, cookie=None, headers=None):
+        c = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=10)
+        h = {'Host': f'127.0.0.1:{self.server.server_port}'} | (headers or {})
+        if method == 'POST': h.update({'Origin': self.origin, 'X-PhD-Action': '1', 'Content-Type': 'application/json'})
+        if cookie: h['Cookie'] = cookie
+        c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
+        r = c.getresponse(); data = r.read()
+        return r.status, data.decode(), r.getheader('Set-Cookie')
+
+    def unlock(self, password=PASSWORD):
+        return self.call('POST', '/api/finance/unlock', {'password': password})
+
+    def assert_no_fic(self, text):
+        for title in self.FIC_TITLES + ('Holdings', 'holdings-2026', 'waiting_for_lock', 'lock_required', '| A | 1 |', '/fic'):
+            self.assertNotIn(title, text)
+
+    def test_locked_by_default_everywhere(self):
+        status, body, _ = self.call('GET', '/api/external')
+        self.assertEqual(status, 200); data = json.loads(body)
+        self.assertTrue(data['finance_locked'])
+        fic = next(s for s in data['sources'] if s['source'] == 'fic')
+        self.assertEqual(fic['records'], []); self.assertIsNone(fic['manifest']); self.assertIsNone(fic['exists'])
+        self.assert_no_fic(body)
+        status, body, _ = self.call('GET', '/api/external/fic')
+        self.assertEqual((status, json.loads(body)), (401, {'locked': True}))
+        self.assertTrue(json.loads(self.call('GET', '/api/finance/status')[1])['locked'])
+
+    def test_finance_shaped_records_in_other_folders_are_withheld(self):
+        record(self.export / 'paicc', 'odd.md', source='fic', source_id='odd', kind='finance_daily', title='Leaked via paicc folder')
+        record(self.export / 'paicc', 'odd2.md', source='paicc', source_id='odd2', kind='finance_alert', title='Alert via paicc')
+        body = self.call('GET', '/api/external')[1]
+        self.assertNotIn('Leaked via paicc folder', body); self.assertNotIn('Alert via paicc', body)
+
+    def test_unlock_sets_strict_httponly_cookie_and_reveals_fic(self):
+        status, body, cookie = self.unlock()
+        self.assertEqual(status, 200); self.assertNotIn(PASSWORD, body)
+        self.assertIn('HttpOnly', cookie); self.assertIn('SameSite=Strict', cookie); self.assertIn('Path=/', cookie)
+        jar = cookie.split(';')[0]
+        data = json.loads(self.call('GET', '/api/external', cookie=jar)[1])
+        self.assertFalse(data['finance_locked'])
+        titles = {r['title'] for s in data['sources'] for r in s['records']}
+        self.assertTrue(set(self.FIC_TITLES) | {'Holdings'} <= titles)
+        self.assertIn('finance_holdings', {r['kind'] for s in data['sources'] for r in s['records']})
+        status, body, _ = self.call('GET', '/api/external/fic', cookie=jar)
+        self.assertEqual(status, 200); self.assertEqual(json.loads(body)['source'], 'fic')
+        # A forged or old token stays locked.
+        self.assertTrue(json.loads(self.call('GET', '/api/external', cookie='desk_finance=forged')[1])['finance_locked'])
+
+    def test_wrong_password_and_bruteforce_lockout(self):
+        for left in (4, 3, 2, 1):
+            status, body, cookie = self.unlock('000000')
+            self.assertEqual(status, 401); self.assertEqual(json.loads(body)['attempts_left'], left); self.assertIsNone(cookie)
+        status, body, _ = self.unlock('000000'); self.assertEqual(status, 429)
+        status, _, cookie = self.unlock(); self.assertEqual(status, 429, 'correct password refused during lockout'); self.assertIsNone(cookie)
+        self.clock[0] += feeds.LOCKOUT_SECONDS + 1
+        self.assertEqual(self.unlock()[0], 200)
+
+    def test_idle_timeout_and_manual_lock(self):
+        jar = self.unlock()[2].split(';')[0]
+        self.clock[0] += feeds.IDLE_SECONDS - 5
+        self.assertFalse(json.loads(self.call('GET', '/api/external', cookie=jar)[1])['finance_locked'], 'use renews the session')
+        self.clock[0] += feeds.IDLE_SECONDS + 1
+        self.assertEqual(self.call('GET', '/api/external/fic', cookie=jar)[0], 401)
+        jar = self.unlock()[2].split(';')[0]
+        status, _, cookie = self.call('POST', '/api/finance/lock', {}, cookie=jar)
+        self.assertEqual(status, 200); self.assertIn('Max-Age=0', cookie)
+        self.assertEqual(self.call('GET', '/api/external/fic', cookie=jar)[0], 401)
+
+    def test_restart_relocks(self):
+        jar = self.unlock()[2].split(';')[0]
+        feeds._tokens.clear()  # what a server restart does: the in-memory token store is empty
+        self.assertEqual(self.call('GET', '/api/external/fic', cookie=jar)[0], 401)
+
+    def test_lock_file_is_reread_and_missing_or_unsafe_file_stays_locked(self):
+        write_lock(self.lock, '135790')
+        self.assertEqual(self.unlock()[0], 401); self.assertEqual(self.unlock('135790')[0], 200)
+        feeds.relock(); self.lock.chmod(0o666)
+        self.assertEqual(self.unlock('135790')[0], 503, 'group/world-writable lock file is ignored')
+        self.lock.unlink()
+        status, body, _ = self.unlock('135790')
+        self.assertEqual(status, 503); self.assertIn('desk lock set', json.loads(body)['reset_hint'])
+        self.assertFalse(json.loads(self.call('GET', '/api/finance/status')[1])['configured'])
+
+    def test_unlock_requires_same_origin_action_header(self):
+        c = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=5)
+        c.request('POST', '/api/finance/unlock', body=json.dumps({'password': PASSWORD}), headers={'Content-Type': 'application/json'})
+        r = c.getresponse(); r.read(); self.assertEqual(r.status, 403); self.assertIsNone(r.getheader('Set-Cookie'))
+        self.assertEqual(self.call('GET', '/api/external', headers={'Sec-Fetch-Site': 'cross-site'})[0], 403)
+
+    def test_password_is_not_kept_or_logged(self):
+        self.unlock(); self.unlock('999999')
+        state = repr(feeds._tokens) + repr(feeds._failures) + repr(vars(feeds))
+        self.assertNotIn(PASSWORD, state); self.assertNotIn('999999', state)
+        js = (APP / 'desk.js').read_text()
+        self.assertNotIn('localStorage.setItem(\'desk.finance', js); self.assertNotIn('sessionStorage', js[js.index('let financeStatus'):js.index('async function loadExternal(')])
 
 
 if __name__ == '__main__':

@@ -130,32 +130,71 @@ function externalMarkdown(body){let lines=String(body||'').split('\n'),out=[],ce
 function externalLine(x){if(!x.trim())return '';if(/^#{1,6} /.test(x)){let l=Math.min(4,Math.max(3,x.match(/^#+/)[0].length+1));return `<h${l}>${externalInline(x.replace(/^#+ /,''))}</h${l}>`}if(/^\s*[-*] /.test(x))return `<p class="bullet${/^\s{2,}/.test(x)?' nested':''}">${externalInline(x.replace(/^\s*[-*] /,''))}</p>`;if(/^> ?/.test(x))return `<blockquote>${externalInline(x.replace(/^> ?/,''))}</blockquote>`;if(/^-{3,}$/.test(x))return '<hr>';return `<p>${externalInline(x)}</p>`}
 // Finance charts (FD-044): plain SVG/HTML, no external libraries. Every number shown comes
 // straight from FIC's chart_data; the UI only scales marks, it never re-totals values.
-const FIN_SERIES=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'],FIN_OTHER='#b9b8b1',FIN_GAIN='#2a78d6',FIN_LOSS='#e34948';
+const FIN_SERIES=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'],FIN_OTHER='#b9b8b1',FIN_GAIN='#e34948',FIN_LOSS='#0f9960';// 红涨绿跌, as in Chinese fund apps
+// Fold state per finance panel (ids only, no figures). A folded panel's body is not rendered at all,
+// so amounts never reach the DOM while it is closed.
+let financeFolded=(()=>{try{let v=JSON.parse(localStorage.getItem('desk.panelFolds')||'{}');return v&&typeof v==='object'?v:{}}catch{return {}}})();
+const finFolded=id=>!!financeFolded[id];
+function finFoldButton(id,label){let f=finFolded(id);return `<button type="button" class="fin-fold" data-fin-fold="${E(id)}" aria-expanded="${!f}" aria-label="${f?'展开 Expand':'收起 Collapse'} ${E(label)}" title="${f?'展开':'收起'}">${f?'▸':'▾'}</button>`}
 const finNum=v=>{let n=Number(v);return isFinite(n)?n.toLocaleString('en-GB',{maximumFractionDigits:0}):'—'},finPct=v=>{let n=Number(v);return isFinite(n)?n.toFixed(1)+'%':'—'},finSigned=v=>{let n=Number(v);return isFinite(n)?(n>0?'+':n<0?'−':'')+Math.abs(n).toLocaleString('en-GB',{maximumFractionDigits:0}):'—'};
 function finTable(head,rows){return `<details class="fin-table"><summary>表格 Table</summary><div class="reading-table"><table><thead><tr>${head.map(h=>`<th>${E(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${E(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>`}
-function finCard(title,en,body){return `<figure class="fin-chart"><figcaption>${E(title)} <span class="external-zh">${E(en)}</span></figcaption>${body}</figure>`}
+function finCard(title,en,body,id){let f=id&&finFolded(id);return `<figure class="fin-chart${f?' is-folded':''}"${id?` data-fin-panel="${E(id)}"`:''}><figcaption><span>${E(title)} <span class="external-zh">${E(en)}</span></span>${id?finFoldButton(id,title):''}</figcaption>${f?'':body}</figure>`}
 function finDonut(cd){
  let rows=Array.isArray(cd.by_category)?cd.by_category:[],R=70,C=2*Math.PI*R,gap=2,off=0;
  let arcs=rows.map((r,i)=>{let w=Math.max(0,Number(r.weight)||0)/100*C,len=Math.max(0,w-gap),color=FIN_SERIES[i]||FIN_OTHER,a=`<circle class="fin-arc" r="${R}" cx="90" cy="90" fill="none" stroke="${color}" stroke-width="24" stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 90 90)"><title>${E(r.label_zh||r.key)} · ${finPct(r.weight)} · ${finNum(r.value)} ${E(cd.base||'')}</title></circle>`;off+=w;return a}).join('');
  let legend=rows.map((r,i)=>`<li><i style="background:${FIN_SERIES[i]||FIN_OTHER}"></i><span>${E(r.label_zh||r.key)}${r.label_en?` <span class="tiny-label">${E(r.label_en)}</span>`:''}</span><b>${finPct(r.weight)}</b></li>`).join('');
- return finCard('资产构成','Allocation by category',`<div class="fin-donut"><svg viewBox="0 0 180 180" role="img" aria-label="资产构成环形图"><circle r="${R}" cx="90" cy="90" fill="none" stroke="#f0efec" stroke-width="24"/>${arcs}<text x="90" y="84" text-anchor="middle" class="fin-total-label">总值 ${E(cd.base||'')}</text><text x="90" y="106" text-anchor="middle" class="fin-total">${finNum(cd.total)}</text></svg><ul class="fin-legend">${legend}</ul></div>`+finTable(['类别','Category','金额 '+(cd.base||''),'占比','浮盈亏','持仓数'],rows.map(r=>[r.label_zh||r.key,r.label_en||'',finNum(r.value),finPct(r.weight),finSigned(r.pnl),r.count??''])));
+ return finCard('资产构成','Allocation by category',`<div class="fin-donut"><svg viewBox="0 0 180 180" role="img" aria-label="资产构成环形图"><circle r="${R}" cx="90" cy="90" fill="none" stroke="#f0efec" stroke-width="24"/>${arcs}<text x="90" y="84" text-anchor="middle" class="fin-total-label">总值 ${E(cd.base||'')}</text><text x="90" y="106" text-anchor="middle" class="fin-total">${finNum(cd.total)}</text></svg><ul class="fin-legend">${legend}</ul></div>`+finTable(['类别','Category','金额 '+(cd.base||''),'占比','浮盈亏','持仓数'],rows.map(r=>[r.label_zh||r.key,r.label_en||'',finNum(r.value),finPct(r.weight),finSigned(r.pnl),r.count??''])),'allocation');
 }
-function finBars(title,en,rows,label,base){
+function finBars(title,en,rows,label,base,id){
  let max=Math.max(0,...rows.map(r=>Math.abs(Number(r.value)||0)))||1;
- return finCard(title,en,`<div class="fin-bars">${rows.map(r=>`<div class="fin-bar-row" title="${E(label(r))} · ${finNum(r.value)} ${E(base)} · ${finPct(r.weight)}"><span class="fin-bar-label">${E(label(r))}</span><span class="fin-bar-track"><span class="fin-bar" style="width:${(Math.abs(Number(r.value)||0)/max*100).toFixed(2)}%;background:${FIN_SERIES[0]}"></span></span><span class="fin-bar-value">${finNum(r.value)} <span class="tiny-label">${finPct(r.weight)}</span></span></div>`).join('')}</div>`+finTable(['名称','金额 '+base,'占比'],rows.map(r=>[label(r),finNum(r.value),finPct(r.weight)])));
+ return finCard(title,en,`<div class="fin-bars">${rows.map(r=>`<div class="fin-bar-row" title="${E(label(r))} · ${finNum(r.value)} ${E(base)} · ${finPct(r.weight)}"><span class="fin-bar-label">${E(label(r))}</span><span class="fin-bar-track"><span class="fin-bar" style="width:${(Math.abs(Number(r.value)||0)/max*100).toFixed(2)}%;background:${FIN_SERIES[0]}"></span></span><span class="fin-bar-value">${finNum(r.value)} <span class="tiny-label">${finPct(r.weight)}</span></span></div>`).join('')}</div>`+finTable(['名称','金额 '+base,'占比'],rows.map(r=>[label(r),finNum(r.value),finPct(r.weight)])),id);
 }
-function finDiverging(title,en,rows,label,key,base,extra){
+function finDiverging(title,en,rows,label,key,base,extra,id){
  let max=Math.max(0,...rows.map(r=>Math.abs(Number(r[key])||0)))||1,vals=rows.map(r=>Number(r[key])||0),oneSided=vals.every(v=>v<=0)||vals.every(v=>v>=0),scale=oneSided?100:50;
- return finCard(title,en,`<div class="fin-bars fin-diverging${oneSided?' one-sided':''}">${rows.map(r=>{let v=Number(r[key])||0,w=(Math.abs(v)/max*scale).toFixed(2);return `<div class="fin-bar-row" title="${E(label(r))} · ${finSigned(v)} ${E(base)}${extra?' · '+E(extra(r)):''}"><span class="fin-bar-label">${E(label(r))}</span><span class="fin-bar-track${oneSided?'':' fin-axis'}"><span class="fin-bar" style="${oneSided?'left:0':v<0?'left:auto;right:50%':'left:50%'};width:${w}%;background:${v<0?FIN_LOSS:FIN_GAIN}"></span></span><span class="fin-bar-value ${v<0?'loss':'gain'}">${finSigned(v)}${extra?` <span class="tiny-label">${E(extra(r))}</span>`:''}</span></div>`}).join('')}</div>`+finTable(['名称','浮盈亏 '+base].concat(extra?['幅度']:[]),rows.map(r=>[label(r),finSigned(r[key])].concat(extra?[extra(r)]:[]))));
+ return finCard(title,en,`<div class="fin-bars fin-diverging${oneSided?' one-sided':''}">${rows.map(r=>{let v=Number(r[key])||0,w=(Math.abs(v)/max*scale).toFixed(2);return `<div class="fin-bar-row" title="${E(label(r))} · ${finSigned(v)} ${E(base)}${extra?' · '+E(extra(r)):''}"><span class="fin-bar-label">${E(label(r))}</span><span class="fin-bar-track${oneSided?'':' fin-axis'}"><span class="fin-bar" style="${oneSided?'left:0':v<0?'left:auto;right:50%':'left:50%'};width:${w}%;background:${v<0?FIN_LOSS:FIN_GAIN}"></span></span><span class="fin-bar-value ${v<0?'loss':'gain'}">${finSigned(v)}${extra?` <span class="tiny-label">${E(extra(r))}</span>`:''}</span></div>`}).join('')}</div>`+finTable(['名称','浮盈亏 '+base].concat(extra?['幅度']:[]),rows.map(r=>[label(r),finSigned(r[key])].concat(extra?[extra(r)]:[]))),id);
+}
+// 总资产浮动: daily total valuation (line) and day-on-day change (bars), oldest first.
+const finDay=d=>{let t=new Date(String(d)+'T12:00:00');return isNaN(t)?String(d||''):t.toLocaleDateString('en-GB',{day:'numeric',month:'short'})},finChangeColor=v=>v>0?FIN_GAIN:v<0?FIN_LOSS:FIN_OTHER;
+const finPctSigned=v=>{let n=Number(v);return v==null||!isFinite(n)?'—':(n>0?'+':n<0?'−':'')+Math.abs(n).toFixed(2)+'%'};
+function finTrend(cd){
+ let dp=cd&&cd.daily_pnl,days=Array.isArray(dp?.days)?dp.days.filter(d=>d&&d.date&&isFinite(Number(d.total))).sort((a,b)=>String(a.date).localeCompare(String(b.date))):[];
+ if(!days.length)return '';
+ let base=String(dp.base||cd.base||''),last=days[days.length-1],ch=last.change==null?null:Number(last.change),num=v=>v==null||!isFinite(Number(v))?'—':finSigned(v);
+ let W=600,H=120,L=8,R=8,T=12,B=12,tot=days.map(d=>Number(d.total)),lo=Math.min(...tot),hi=Math.max(...tot),pad=(hi-lo)*0.15||Math.abs(hi)*0.01||1;lo-=pad;hi+=pad;
+ let tgt=finN(cd.goal&&cd.goal.target),span=hi-lo,tgtIn=isFinite(tgt)&&tgt>=lo-span*2&&tgt<=hi+span*2;if(tgtIn){hi=Math.max(hi,tgt+span*0.08);lo=Math.min(lo,tgt-span*0.08)}
+ let x=i=>days.length===1?W/2:L+i*(W-L-R)/(days.length-1),y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
+ let path=days.map((d,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(Number(d.total)).toFixed(1)}`).join(' ');
+ let dots=days.map((d,i)=>`<g class="fin-pt"><circle cx="${x(i).toFixed(1)}" cy="${y(Number(d.total)).toFixed(1)}" r="12" fill="transparent"/><circle cx="${x(i).toFixed(1)}" cy="${y(Number(d.total)).toFixed(1)}" r="4" fill="${FIN_SERIES[0]}" stroke="#fcfcfb" stroke-width="2"/><title>${E(finDay(d.date))} · 总值 ${finNum(d.total)} ${E(base)}${d.change!=null?` · ${num(d.change)} (${finPctSigned(d.change_pct)})`:''}</title></g>`).join('');
+ let ticks=`<div class="fin-axis-dates tiny-label"><span>${E(finDay(days[0].date))}</span>${days.length>1?`<span>${E(finDay(last.date))}</span>`:''}</div>`;
+ let tgtNote=isFinite(tgt)?`<div class="tiny-label fin-target-note">${tgtIn?'虚线 = 目标':'目标'} ${finNum(tgt)} ${E(base)}${tgtIn?'':tgt>hi?' · 高于当前图表范围，未画线':' · 低于当前图表范围，未画线'}</div>`:'';
+ let line=tgtNote+`<svg class="fin-line" viewBox="0 0 ${W} ${H}" role="img" aria-label="总资产走势 Total value by day"><line x1="0" x2="${W}" y1="${H-B}" y2="${H-B}" stroke="#e7e6e2"/>${tgtIn?`<line x1="0" x2="${W}" y1="${y(tgt).toFixed(1)}" y2="${y(tgt).toFixed(1)}" stroke="#898781" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"><title>目标 ${finNum(tgt)} ${E(base)}</title></line>`:''}${days.length>1?`<path d="${path}" fill="none" stroke="${FIN_SERIES[0]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`:''}${dots}</svg>${ticks}`;
+ let chg=days.filter(d=>d.change!=null&&isFinite(Number(d.change))),cmax=Math.max(0,...chg.map(d=>Math.abs(Number(d.change))))||1,BH=80,mid=BH/2,bw=Math.min(36,(W-L-R)/Math.max(days.length,1)*0.6);
+ let bars=days.map((d,i)=>{if(d.change==null||!isFinite(Number(d.change)))return '';let v=Number(d.change),h=Math.max(2,Math.abs(v)/cmax*(mid-8)),cx=days.length===1?W/2:L+bw/2+i*(W-L-R-bw)/Math.max(days.length-1,1);return `<g><rect x="${(cx-bw/2).toFixed(1)}" y="${(v>=0?mid-h:mid).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${finChangeColor(v)}"/><title>${E(finDay(d.date))} · ${num(v)} ${E(base)} (${finPctSigned(d.change_pct)})</title></g>`}).join('');
+ let barSvg=chg.length?`<svg class="fin-change-bars" viewBox="0 0 ${W} ${BH}" role="img" aria-label="每日变化 Daily change"><line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="#d9d8d3"/>${bars}</svg>`:'<p class="tiny-label">明天起显示每日变化柱 · Daily change bars start tomorrow</p>';
+ let head=`<div class="fin-today"><span class="tiny-label">今日变化 ${E(finDay(last.date))}</span><b class="fin-today-change" style="color:${ch==null?'inherit':finChangeColor(ch)}">${num(ch)} <span class="fin-today-unit">${E(base)}</span></b><span class="fin-today-pct" style="color:${ch==null?'inherit':finChangeColor(ch)}">${finPctSigned(last.change_pct)}</span><span class="tiny-label">总值 ${finNum(last.total)} ${E(base)}${last.est?` · 含估算 ≈${finSigned(last.est)}`:''}</span></div>`;
+ let table=finTable(['日期 Date','总值 '+base,'变化 Change','%','确定 Exact','≈估算 Est'],[...days].reverse().map(d=>[String(d.date),finNum(d.total),num(d.change),finPctSigned(d.change_pct),num(d.exact),d.est==null?'—':'≈'+finSigned(d.est)])).replace('<details class="fin-table">','<details class="fin-table" open>');
+ return finCard('总资产浮动','Total-asset trend',head+line+barSvg+`<p class="tiny-label fin-legend-note"><span style="color:${FIN_GAIN}">■ 上涨</span> <span style="color:${FIN_LOSS}">■ 下跌</span> · ≈ 指数基金估算 index-fund estimate</p>`+table,'trend');
+}
+// 目标进度 (FD-052): analysis only, no trade wording. FIC sends numbers as strings.
+const finN=v=>v==null||v===''?NaN:Number(String(v).replace(/,/g,''));
+function finGoal(cd){
+ let g=cd&&cd.goal;if(!g||typeof g!=='object')return '';
+ let base=String(cd.base||''),target=finN(g.target),pct=finN(g.progress_pct),gap=finN(g.gap),req=finN(g.required_return_pct),ann=finN(g.required_annualised_pct),w=Math.max(0,Math.min(100,isFinite(pct)?pct:0));
+ let pctText=isFinite(pct)?pct.toFixed(1)+'%':'—';
+ let body=`<div class="fin-goal"><div class="fin-goal-head"><span><b class="fin-goal-pct">${pctText}</b> <span class="tiny-label">目标 ${finNum(target)} ${E(base)}${g.goal_date?` · 截至 ${E(g.goal_date)}`:''}</span></span>${g.reached===true?'<span class="badge external-confirmed">已达成 Reached</span>':''}</div>
+ <div class="fin-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${w.toFixed(1)}" aria-label="目标进度 Goal progress"><span style="width:${w.toFixed(2)}%"></span></div>
+ <div class="fin-goal-stats"><span><span class="tiny-label">当前 Now</span><b>${finNum(g.total)}</b></span><span><span class="tiny-label">差距 Gap</span><b>${g.reached===true?'0':finNum(gap)}</b></span><span><span class="tiny-label">剩余 Days left</span><b>${Number.isFinite(g.days_left)?E(g.days_left)+' 天':'—'}</b></span></div>
+ ${g.reached!==true&&isFinite(req)?`<p class="fin-goal-req">还需增长 <b>${req.toFixed(1)}%</b>${isFinite(ann)?`（年化 ${ann.toFixed(1)}%）`:''}</p>`:''}${g.note?`<p class="tiny-label fin-goal-note">${E(g.note)}</p>`:''}</div>`;
+ return finCard('目标进度','Goal progress',body,'goal');
 }
 function financeCharts(cd){
  if(!cd||typeof cd!=='object')return '';let base=String(cd.base||'');
  let parts=[finDonut(cd)];
- if(Array.isArray(cd.by_region)&&cd.by_region.length)parts.push(finBars('地区分布','By region',cd.by_region,r=>r.label_zh||r.key,base));
- if(Array.isArray(cd.by_account)&&cd.by_account.length)parts.push(finBars('账户分布','By account',cd.by_account,r=>r.account,base));
- if(Array.isArray(cd.by_currency)&&cd.by_currency.length)parts.push(finBars('币种分布','By currency',cd.by_currency,r=>r.key,base));
- if(Array.isArray(cd.by_category)&&cd.by_category.some(r=>r.pnl!=null))parts.push(finDiverging('各类浮盈亏','Unrealised P&L by category',cd.by_category,r=>r.label_zh||r.key,'pnl',base));
- if(Array.isArray(cd.top_losses)&&cd.top_losses.length)parts.push(finDiverging('最大亏损 Top 10','Largest losses',cd.top_losses.slice(0,10),r=>r.name+(r.account?' · '+r.account:''),'pnl',base,r=>r.pnl_pct!=null?finPct(r.pnl_pct):''));
+ if(Array.isArray(cd.by_region)&&cd.by_region.length)parts.push(finBars('地区分布','By region',cd.by_region,r=>r.label_zh||r.key,base,'region'));
+ if(Array.isArray(cd.by_account)&&cd.by_account.length)parts.push(finBars('账户分布','By account',cd.by_account,r=>r.account,base,'account'));
+ if(Array.isArray(cd.by_currency)&&cd.by_currency.length)parts.push(finBars('币种分布','By currency',cd.by_currency,r=>r.key,base,'currency'));
+ if(Array.isArray(cd.by_category)&&cd.by_category.some(r=>r.pnl!=null))parts.push(finDiverging('各类浮盈亏','Unrealised P&L by category',cd.by_category,r=>r.label_zh||r.key,'pnl',base,null,'pnl-category'));
+ if(Array.isArray(cd.top_losses)&&cd.top_losses.length)parts.push(finDiverging('最大亏损 Top 10','Largest losses',cd.top_losses.slice(0,10),r=>r.name+(r.account?' · '+r.account:''),'pnl',base,r=>r.pnl_pct!=null?finPct(r.pnl_pct):'','top-losses'));
  return `<div class="fin-charts">${parts.join('')}</div>`;
 }
 function financeViews(views){
@@ -170,14 +209,15 @@ function financeFollowups(items){
 }
 function financeView(){
  if(externalData?.finance_locked)return financeLockView();
- let h=pageHeading('金融 Finance',`<button class="btn" data-action="finance-lock">🔒 锁定 Lock</button><button class="btn" data-action="external-refresh">Refresh</button>`,'Read-only reports and learning from FIC');
- if(!externalData)return h+`<div class="quiet-empty">${externalState==='error'?'Could not read the local export folders.':'Loading exports…'}</div>`;
+ let h=pageHeading('金融 Finance',`<button class="btn" data-fin-fold-all="fold">__FIN_FOLD_ALL__</button><button class="btn" data-action="finance-lock">🔒 锁定 Lock</button><button class="btn" data-action="external-refresh">Refresh</button>`,'Read-only reports and learning from FIC');
+ if(!externalData)return h.replace('__FIN_FOLD_ALL__','全部收起 Collapse all')+`<div class="quiet-empty">${externalState==='error'?'Could not read the local export folders.':'Loading exports…'}</div>`;
  let fic=externalData.sources.find(s=>s.source==='fic')||{records:[],warnings:[],exists:false},all=externalData.sources.flatMap(s=>s.records),fin=all.filter(r=>['finance_daily','finance_alert','finance_review','finance_holdings','learning'].includes(externalKind(r)));
  h+=`<div class="external-sources"><div class="external-source-card"><b>FIC</b> <span class="tiny-label">${fic.exists?`${fic.records.length} record${fic.records.length===1?'':'s'}`:'Not exported yet'}</span>${fic.warnings.map(w=>`<div class="external-warning" role="alert">${E(w)}</div>`).join('')}</div></div>`;
  if(fin.some(r=>r.demo))h+=`<div class="finance-demo-note" role="note"><b>演示 Demo</b> Some finance records are demonstration data, not real figures.</div>`;
- if(!fin.length)return h+'<div class="quiet-empty">No finance exports yet.</div>';
+ if(!fin.length)return h.replace('__FIN_FOLD_ALL__','全部收起 Collapse all')+'<div class="quiet-empty">No finance exports yet.</div>';
  let daily=fin.filter(r=>externalKind(r)==='finance_daily').sort(externalSort('finance_daily')),alerts=fin.filter(r=>externalKind(r)==='finance_alert').sort(externalSort('finance_alert')),learning=fin.filter(r=>externalKind(r)==='learning').sort(externalSort('learning')),reviews=fin.filter(r=>externalKind(r)==='finance_review').sort((a,b)=>String(b.date||b.updated_at||'').localeCompare(String(a.date||a.updated_at||''))),latest=daily[0],review=reviews[0],holdings=fin.filter(r=>externalKind(r)==='finance_holdings').sort(externalSort('finance_holdings'))[0];
- let section=(id,label,zh,body)=>`<section class="section external-section" id="finance-${id}"><div class="section-head"><h2>${E(zh)} <span class="external-zh">${E(label)}</span></h2></div>${body}</section>`;
+ let section=(id,label,zh,body)=>{let f=finFolded('s-'+id);return `<section class="section external-section${f?' is-folded':''}" id="finance-${id}" data-fin-panel="s-${id}"><div class="section-head"><h2>${E(zh)} <span class="external-zh">${E(label)}</span></h2>${finFoldButton('s-'+id,zh)}</div>${f?'':body}</section>`};
+ let trend=holdings?finGoal(holdings.chart_data)+finTrend(holdings.chart_data):'';if(trend)h+=`<div class="fin-charts fin-trend">${trend}</div>`;
  h+=section('alerts','Alerts','提醒',`<div class="external-list">${alerts.map(r=>externalItem(r)).join('')||'<div class="quiet-empty">No alerts</div>'}</div>`);
  h+=section('review','Daily review','每日复盘',review?`<article class="external-item finance-report">${externalItem({...review,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeViews(review.views)}${financeFollowups(review.followups)}${review.views||review.followups?`<details class="external-body"><summary>复盘全文 Full review</summary><div class="external-markdown">${externalMarkdown(review.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(review.body)}</div>`}</article>${reviews.length>1?`<h4 class="external-sub">Earlier reviews</h4><div class="external-list">${reviews.slice(1,14).map(r=>externalItem(r)).join('')}</div>`:''}`:'<div class="quiet-empty">No review exported yet</div>');
  h+=section('holdings','Holdings','持仓',holdings?`<article class="external-item finance-report">${externalItem({...holdings,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeCharts(holdings.chart_data)}${holdings.chart_data?`<details class="external-body"><summary>持仓明细 Details</summary><div class="external-markdown">${externalMarkdown(holdings.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(holdings.body)}</div>`}</article>`:'<div class="quiet-empty">No holdings exported yet</div>');
@@ -185,7 +225,8 @@ function financeView(){
  if(daily.length>1)h+=section('earlier','Earlier reports','往期日报',`<div class="external-list">${daily.slice(1,14).map(r=>externalItem(r)).join('')}</div>`);
  let topics=[...new Set(learning.map(r=>r.topic||'other'))];
  h+=section('learning','Learning','金融学习',learning.length?topics.map(t=>`<h4 class="external-sub">${E(String(t).replace(/_/g,' '))}</h4><div class="external-list">${learning.filter(r=>(r.topic||'other')===t).map(r=>externalItem(r)).join('')}</div>`).join(''):'<div class="quiet-empty">Nothing here yet</div>');
- return h;
+ let allClosed=h.includes('data-fin-fold="')&&!/data-fin-fold="[^"]*" aria-expanded="true"/.test(h);
+ return h.replace('data-fin-fold-all="fold">__FIN_FOLD_ALL__',allClosed?'data-fin-fold-all="open">全部展开 Expand all':'data-fin-fold-all="fold">全部收起 Collapse all');
 }
 // Finance lock (FD-043): the server withholds every FIC record until unlocked. The UI only
 // shows the password form; the password is sent once and never stored (no localStorage).
@@ -229,6 +270,12 @@ async function saveTaskMarks(){
  taskMarkSaving=false;if(failed)alert('有一项完成状态没能保存，请再试一次。 Could not save a tick.');
 }
 document.addEventListener('click',e=>{let b=e.target.closest?.('[data-task-mark]');if(!b)return;e.preventDefault();toggleTaskMark(b.dataset.taskMark.split(',').filter(Boolean),b.dataset.done==='1')});
+function financeFoldSave(){try{localStorage.setItem('desk.panelFolds',JSON.stringify(financeFolded))}catch{}}
+document.addEventListener('click',e=>{let f=e.target.closest?.('[data-fin-fold]'),all=e.target.closest?.('[data-fin-fold-all]');if(!f&&!all)return;e.preventDefault();
+ if(f){if(financeFolded[f.dataset.finFold])delete financeFolded[f.dataset.finFold];else financeFolded[f.dataset.finFold]=true}
+ else if(all.dataset.finFoldAll==='open')financeFolded={};
+ else document.querySelectorAll('[data-fin-panel]').forEach(p=>financeFolded[p.dataset.finPanel]=true);
+ financeFoldSave();render()});
 // Coming back to Desk after a while picks up PAICC's newest export (it refreshes from your mail during the day).
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&['today','briefing'].includes(route)&&externalState!=='loading'&&Date.now()-externalLoadedAt>10*60*1000)loadExternal()});
 document.addEventListener('submit',e=>{if(e.target?.id!=='finance-unlock')return;e.preventDefault();let input=document.getElementById('finance-password'),pw=input?.value||'';if(input)input.value='';if(pw)financeUnlock(pw)});

@@ -193,3 +193,26 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert.deepEqual(Object.keys(c.marks()).sort(),['a','b'],'no tick lost after replies');
  console.log('Task marks: serialized saves passed');
 })().catch(e=>{console.error(e);process.exit(1)});
+
+// FIC FD-051: total-asset trend and per-panel folding (fabricated figures only).
+{
+ const cd={base:'CNY',total:1000,by_category:[{key:'a',label_zh:'甲类',weight:60,value:600,pnl:12},{key:'b',label_zh:'乙类',weight:40,value:400,pnl:-7}],by_region:[{key:'x',label_zh:'示例地区',value:777001,weight:100}],
+  daily_pnl:{base:'CNY',days:[{date:'2030-01-02',total:101234,change:-543,change_pct:-0.53,exact:-500,est:-43,groups:[]},{date:'2030-01-01',total:101777,change:null,change_pct:null,exact:null,est:null,groups:[]}]}};
+ const fin=(folded={})=>{vm.runInContext('financeFolded='+JSON.stringify(folded),ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓 2030-01-02',date:'2030-01-02',chart_data:cd,body:'| A | 98765 |'}]}]};return ctx.financeView()};
+ let f=fin(),tr=f.slice(f.indexOf('data-fin-panel="trend"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="trend"')));
+ assert(f.indexOf('data-fin-panel="trend"')<f.indexOf('id="finance-alerts"'),'trend panel first');
+ assert(tr.includes('今日变化')&&tr.includes('−543')&&tr.includes('−0.53%')&&tr.includes('#0f9960'),'today change prominent, green for a fall');
+ assert(tr.includes('<path')&&(tr.match(/r="4"/g)||[]).length===2&&(tr.match(/<rect /g)||[]).length===1,'two points, one change bar (first day has none)');
+ assert(tr.includes('≈−43')&&tr.includes('<td>2030-01-01</td>')&&tr.indexOf('2030-01-02</td>')<tr.indexOf('2030-01-01</td>'),'table newest first with ≈ estimate');
+ assert(tr.includes('data-fin-fold="trend"')&&f.includes('data-fin-fold="allocation"')&&f.includes('data-fin-fold="region"')&&f.includes('data-fin-fold="s-holdings"')&&f.includes('data-fin-fold-all'),'every panel has a fold control');
+ let folded=fin({trend:true,region:true});
+ assert(!folded.includes('101,234')&&!folded.includes('−543')&&!folded.includes('777,001')&&folded.includes('aria-expanded="false"'),'folded panels render no figures');
+ assert(folded.includes('600')&&folded.includes('全部收起'),'other panels still shown; Collapse all stays while some are open');
+ let allF=fin({trend:true,'s-alerts':true,'s-review':true,'s-holdings':true,'s-latest':true,'s-learning':true});assert(allF.includes('data-fin-fold-all="open">全部展开')&&!allF.includes('__FIN'),'all folded offers Expand all');
+ let sec=fin({'s-holdings':true});assert(!sec.includes('98765')&&!sec.includes('777,001')&&!sec.includes('甲类'),'folded holdings section renders nothing inside');
+ let one=JSON.parse(JSON.stringify(cd));one.daily_pnl.days=[cd.daily_pnl.days[1]];cd.daily_pnl=one.daily_pnl;let o=fin();
+ assert(o.includes('明天起显示每日变化柱')&&!o.includes('NaN'),'single day renders without bars or NaN');
+ vm.runInContext('financeFolded={}',ctx);
+ assert(!src.slice(src.indexOf('function financeFoldSave'),src.indexOf('function financeFoldSave')+200).match(/total|value|change/),'fold storage holds panel ids only');
+ console.log('Finance trend and folding passed');
+}

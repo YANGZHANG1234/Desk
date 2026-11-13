@@ -103,7 +103,7 @@ def compose(result, day, finance_included):
     def section(title, items):
         items = [str(x).strip() for x in (items or []) if str(x).strip()]
         return f'## {title}\n\n' + ('\n'.join(f'- {x}' for x in items) if items else '- （无）') + '\n'
-    body = (f"> {str(result.get('one_line') or '').strip()}\n\n" if result.get('one_line') else '')
+    body = (f"**一句话**：{str(result.get('one_line') or '').strip()}\n\n" if result.get('one_line') else '')
     body += section('今天做了什么', result.get('did')) + '\n' + section('需要继续', result.get('next')) + '\n' + section('生活上的重要事情', result.get('life'))
     body += '\n' + (section('金融', result.get('finance')) if finance_included else '## 金融\n\n- 金融已锁定，这次没有包含。解锁金融页后重新生成即可。\n')
     stamp = dt.datetime.now().astimezone().strftime('%H:%M')

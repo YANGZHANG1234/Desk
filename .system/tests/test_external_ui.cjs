@@ -278,11 +278,12 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  const view=()=>{vm.runInContext('financeFolded={}',ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:cd,body:'x'}]}]};return ctx.financeView()};
  let v=view(),at=k=>v.indexOf(k);
  assert(at('data-fin-panel="decision"')<at('data-fin-panel="trend"')&&at('data-fin-panel="trend"')<at('data-fin-panel="control"')&&at('data-fin-panel="control"')<at('id="finance-holdings"')&&at('id="finance-holdings"')<at('id="finance-alerts"'),'conclusion, trend, control cards, holdings, then the rest');
- assert(v.includes('fin-status-warn">关注')&&v.includes('示例原因')&&v.includes('今天没有需要你决定的事'),'decision status, reason, empty decisions');
+ assert(v.includes('fin-status-warn">关注')&&v.includes('示例原因')&&v.includes('今天没有需要你批准的决定'),'decision status, reason, empty decisions');
  let card=v.slice(at('class="fin-ctl-cols"'));
  assert(card.indexOf('逻辑状态')<card.indexOf('示例依据')&&card.indexOf('示例依据')<card.indexOf('提醒线 Alert lines')&&card.indexOf('提醒线 Alert lines')<card.indexOf('示例跌幅'),'thesis and alert lines in separate columns');
  assert(card.includes('到达提醒线＝重新判断，不是卖出指令')&&card.includes('<b>基线日期</b> 2030-01-01')&&v.includes('基线 2030-01-01'),'fixed note and baseline date');
  assert(v.includes('<b>退出方式</b> 用户原文：分批退出'),'approved text shown verbatim');
+ assert(v.includes('<b>覆盖</b> 示例股票')&&!v.includes('<b>覆盖</b> eq'),'coverage shows category names, not keys');
  assert(v.includes('<b>未建立监控</b> 示例私募、示例现金'),'uncovered categories listed');
  cd.control.uncovered=['pe'];assert(view().includes('<b>未建立监控</b> 示例私募')&&!view().includes('示例私募、示例现金'),'export-provided uncovered list wins');
  delete cd.decision;assert(!view().includes('data-fin-panel="decision"'),'no decision field, no block');

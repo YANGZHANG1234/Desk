@@ -205,13 +205,14 @@ function finTrigRows(list){return `<div class="reading-table"><table><thead><tr>
 function finControl(cd){
  let c=cd&&cd.control,cards=Array.isArray(c?.cards)?[...c.cards]:[];if(!cards.length)return '';
  cards.sort((a,b)=>(FIN_SEVERITY[b.status]||0)-(FIN_SEVERITY[a.status]||0));
+ let catName=Object.fromEntries((Array.isArray(cd.by_category)?cd.by_category:[]).filter(k=>k&&k.key).map(k=>[k.key,k.label_zh||k.label_en||k.key]));
  let counts=cards.reduce((m,x)=>(m[x.status]=(m[x.status]||0)+1,m),{});
  let summary=Object.keys(FIN_CARD_STATUS).filter(k=>counts[k]).map(k=>`${finBadge(FIN_CARD_STATUS,k)} ${counts[k]}`).join(' ');
  let cats=cards.flatMap(x=>(x.triggers||[]).filter(t=>t.type==='date'&&t.days_to!=null&&t.days_to>=0).map(t=>({...t,card:x.title}))).sort((a,b)=>a.days_to-b.days_to).slice(0,3);
  let rows=cards.map(x=>{let near=finNearest(x),trig=x.triggers||[],alerts=trig.filter(t=>!['date','thesis'].includes(t.type)),dates=trig.filter(t=>t.type==='date'),thesisRows=trig.filter(t=>t.type==='thesis');
   let logic=`<div class="fin-ctl-col"><h5>逻辑状态 Thesis</h5>${finThesisCheck(x.thesis_check)}${[['论点',x.thesis],['失效条件',x.kill]].filter(([,v])=>v).map(([l,v])=>`<p><b>${E(l)}</b> ${E(v)}</p>`).join('')}${thesisRows.length?finTrigRows(thesisRows):''}</div>`;
   let lines=`<div class="fin-ctl-col"><h5>提醒线 Alert lines</h5><p class="tiny-label fin-alert-note">${FIN_ALERT_NOTE}</p>${x.baseline?`<p><b>基线日期</b> ${E(x.baseline)}</p>`:''}${alerts.length?finTrigRows(alerts):'<p class="tiny-label">没有提醒线</p>'}</div>`;
-  let rest=`${'exit_plan' in x||'switch_candidate' in x?finPlanLine('退出方式',x.exit_plan)+finPlanLine('资金去向',x.switch_candidate):''}${[['计划',x.plan],['下次复核',x.next_review]].filter(([,v])=>v).map(([l,v])=>`<p><b>${E(l)}</b> ${E(v)}</p>`).join('')}${Array.isArray(x.groups)&&x.groups.length?`<p><b>覆盖</b> ${x.groups.map(E).join('、')}</p>`:''}${Array.isArray(x.watch)&&x.watch.length?`<div><b>观察</b><ul>${x.watch.map(w=>`<li>${E(w)}</li>`).join('')}</ul></div>`:''}${dates.length?`<h5>日期</h5>${finTrigRows(dates)}`:''}`;
+  let rest=`${'exit_plan' in x||'switch_candidate' in x?finPlanLine('退出方式',x.exit_plan)+finPlanLine('资金去向',x.switch_candidate):''}${[['计划',x.plan],['下次复核',x.next_review]].filter(([,v])=>v).map(([l,v])=>`<p><b>${E(l)}</b> ${E(v)}</p>`).join('')}${Array.isArray(x.groups)&&x.groups.length?`<p><b>覆盖</b> ${x.groups.map(g=>E(catName[g]||g)).join('、')}</p>`:''}${Array.isArray(x.watch)&&x.watch.length?`<div><b>观察</b><ul>${x.watch.map(w=>`<li>${E(w)}</li>`).join('')}</ul></div>`:''}${dates.length?`<h5>日期</h5>${finTrigRows(dates)}`:''}`;
   return `<details class="fin-ctl-card fin-ctl-${E((FIN_CARD_STATUS[x.status]||['','ok'])[1])}"><summary><span class="fin-ctl-head"><b>${E(x.title)}</b>${finBadge(FIN_CARD_STATUS,x.status)}${x.baseline?`<span class="tiny-label">基线 ${E(x.baseline)}</span>`:''}</span><span class="fin-ctl-near">${near.map(t=>`<span>${finBadge(FIN_TRIG_STATUS,t.status)} ${finTrigText(t)}</span>`).join('')||'<span class="tiny-label">没有进行中的提醒</span>'}</span></summary><div class="fin-ctl-body"><div class="fin-ctl-cols">${logic}${lines}</div>${rest}</div></details>`}).join('');
  // Categories no card covers (FIC can send control.uncovered; otherwise card groups are matched to category keys).
  let covered=new Set(cards.flatMap(x=>Array.isArray(x.groups)?x.groups:[])),cat=Array.isArray(cd.by_category)?cd.by_category:[];
@@ -219,12 +220,12 @@ function finControl(cd){
  let body=`<div class="fin-ctl-summary">${summary}${c.as_of?`<span class="tiny-label">截至 ${E(c.as_of)}</span>`:''}</div><p class="tiny-label fin-alert-note">${FIN_ALERT_NOTE}</p>${cats.length?`<div class="fin-ctl-cats"><span class="tiny-label">近期日期 Upcoming dates</span>${cats.map(t=>`<span class="fin-ctl-cat"><b>${E(t.on||'')}</b> ${E(t.label)} <span class="tiny-label">${E(t.card)} · ${t.days_to===0?'今天':E(t.days_to)+' 天后'}</span></span>`).join('')}</div>`:''}<div class="fin-ctl-list">${rows}</div>${uncovered.length?`<p class="fin-uncovered"><b>未建立监控</b> ${uncovered.map(E).join('、')}</p>`:''}${c.note?`<p class="tiny-label fin-ctl-note">${E(c.note)}</p>`:''}`;
  return finCard('控制卡','Control cards',body,'control');
 }
-// 今日结论 / 需要你决定的事: shown only from FIC's export; Desk decides nothing itself.
+// 今日结论 / 需要你批准的决定: shown only from FIC's export; Desk decides nothing itself.
 const FIN_DECISION={'维持':'ok','关注':'warn','审查':'review'};
 function finDecision(cd){
  let d=cd&&cd.decision,items=Array.isArray(cd?.decisions_needed)?cd.decisions_needed:null;if(!d&&!items)return '';
  let head=d?`<div class="fin-decision"><span class="fin-status fin-status-${FIN_DECISION[d.status]||'ok'}">${E(d.status||'—')}</span>${d.as_of?`<span class="tiny-label">${E(d.as_of)}</span>`:''}${d.reason?`<p>${E(d.reason)}</p>`:''}</div>`:'';
- let need=`<h5>需要你决定的事</h5>${items&&items.length?`<ul class="fin-needs">${items.map(n=>`<li><b>${E(n.item||n.title||'')}</b>${n.due?` <span class="tiny-label">截止 ${E(n.due)}</span>`:''}${n.analysis?`<p>${E(n.analysis)}</p>`:''}${Array.isArray(n.options)&&n.options.length?`<p class="tiny-label">可选：${n.options.map(E).join(' / ')}</p>`:''}</li>`).join('')}</ul>`:'<p class="tiny-label">今天没有需要你决定的事</p>'}`;
+ let need=`<h5>需要你批准的决定</h5>${items&&items.length?`<ul class="fin-needs">${items.map(n=>`<li><b>${E(n.item||n.title||'')}</b>${n.due?` <span class="tiny-label">截止 ${E(n.due)}</span>`:''}${n.analysis?`<p>${E(n.analysis)}</p>`:''}${Array.isArray(n.options)&&n.options.length?`<p class="tiny-label">可选：${n.options.map(E).join(' / ')}</p>`:''}</li>`).join('')}</ul>`:'<p class="tiny-label">今天没有需要你批准的决定</p>'}`;
  return finCard('今日结论','Today’s conclusion',head+need,'decision');
 }
 // 持仓明细 with price date and valuation basis (FD-063). Basis shares are summed from the rows' own weights.

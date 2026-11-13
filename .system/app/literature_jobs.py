@@ -46,8 +46,10 @@ def control(m,id,action):
   elif action=='cancel' and row['state']=='queued':c.execute("UPDATE jobs SET state='cancelled',updated=? WHERE id=?",(g.now(),id))
  start(m);return {'id':id}
 
+# The ChatGPT app has moved its bundled CLI between releases; try each known location.
+CODEX_PATHS=['/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex','/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex','/Applications/ChatGPT.app/Contents/Resources/codex']
 def agent(m,prompt,folder):
- executable=shutil.which('codex') or '/Applications/ChatGPT.app/Contents/Resources/codex'
+ executable=shutil.which('codex') or next((x for x in CODEX_PATHS if Path(x).is_file()),CODEX_PATHS[0])
  out=folder/'answer.json';out.unlink(missing_ok=True)
  # Document content is passed as data; sandbox read-only, worker validates returned fields.
  cmd=[executable,'exec','--ephemeral','--skip-git-repo-check','-s','read-only','-C',str(folder),'-o',str(out),'-']

@@ -128,7 +128,8 @@ class ExternalFeedTests(unittest.TestCase):
     def test_agent_network_and_index_code_cannot_reach_exports(self):
         # Static guard: only phd.py's GET handler may import the export reader.
         for path in APP.glob('*.py'):
-            if path.name in ('external_feeds.py', 'phd.py'): continue
+            # journal_digest.py is the user-approved exception (2026-11-13): it summarises exports with Codex on request.
+            if path.name in ('external_feeds.py', 'phd.py', 'journal_digest.py'): continue
             text = path.read_text()
             for needle in ('external_feeds', 'desk-export', 'PAICC', 'EXPORT_ROOT'):
                 self.assertNotIn(needle, text, f'{path.name} must not reference {needle}')
@@ -139,6 +140,10 @@ class ExternalFeedTests(unittest.TestCase):
         for call in ('snapshot', 'load_source', 'guarded_snapshot'):
             self.assertNotIn(call, post, 'unlock/lock handlers never return records')
         self.assertNotIn('/api/external', ast.get_source_segment(source, next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'do_POST')))
+        for path in APP.glob('literature_*.py'):
+            self.assertNotIn('journal_digest', path.read_text(), 'literature agents never pull in the digest')
+        digest_users = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and 'journal_digest' in ast.get_source_segment(source, n)]
+        self.assertEqual(sorted(digest_users), ['do_POST', 'journal_digest_post'], 'only the explicit POST route runs the digest')
         js = (APP / 'desk.js').read_text()
         self.assertEqual(js.count("'/api/external'"), 1, 'the UI only fetches exports with a plain GET')
         self.assertNotIn('externalData', js[js.index('async function mutate('):js.index('let zoteroSyncing')])
@@ -361,3 +366,78 @@ class TaskMarkTests(unittest.TestCase):
         text = (APP / 'task_marks.py').read_text()
         for needle in ('external_feeds', 'desk-export', 'PAICC', 'EXPORT_ROOT', 'urllib', 'socket', 'subprocess'):
             self.assertNotIn(needle, text)
+
+
+class JournalDigestTests(unittest.TestCase):
+    """The daily digest sends exports to the agent only on request, and finance only while unlocked."""
+    def setUp(self):
+        FinanceLockTests.setUp(self)
+        self.ws = self.root / 'ws'
+        for name in ('config', 'templates', 'context'):
+            shutil.copytree(APP.parent / name, self.ws / '.system' / name)
+        (self.ws / '.system/index').mkdir(parents=True)
+        self.old_ws = (phd.ROOT, phd.W, phd.SYS); phd.ROOT, phd.W, phd.SYS = self.ws, self.ws / 'Records', self.ws / '.system'
+        self.old_marks = os.environ.get('DESK_TASK_MARKS'); os.environ['DESK_TASK_MARKS'] = str(self.root / 'marks.json')
+        self.prompts = []
+
+    def tearDown(self):
+        phd.ROOT, phd.W, phd.SYS = self.old_ws
+        if self.old_marks is None: os.environ.pop('DESK_TASK_MARKS', None)
+        else: os.environ['DESK_TASK_MARKS'] = self.old_marks
+        FinanceLockTests.tearDown(self)
+
+    call = FinanceLockTests.call
+
+    def agent(self, _m, prompt, _folder):
+        self.prompts.append(prompt)
+        return {'did': ['示例完成'], 'next': ['Reply to reviewer'], 'life': [], 'finance': ['示例金额 +1'], 'one_line': '示例一天'}
+
+    def run_digest(self, token=None):
+        import journal_digest
+        return journal_digest.generate(phd, '2026-11-10', token, agent=self.agent)
+
+    def test_locked_digest_has_mail_but_no_finance(self):
+        result = self.run_digest()
+        self.assertFalse(result['finance_included'])
+        prompt = self.prompts[-1]
+        self.assertIn('Reply to reviewer', prompt); self.assertIn('Supervisor sync', prompt)
+        self.assertIn('locked: not included', prompt)
+        for title in ('Holdings', 'Finance daily', 'Alert'): self.assertNotIn(title, prompt)
+        entry = next(r for r in phd.records() if r['type'] == 'journal')
+        self.assertEqual(entry['title'], '自动摘记 2026-11-10')
+        self.assertIn('## 今天做了什么', entry['body']); self.assertIn('金融已锁定', entry['body']); self.assertNotIn('示例金额', entry['body'])
+
+    def test_unlocked_digest_includes_finance_and_replaces_entry(self):
+        status, _, cookie = self.call('POST', '/api/finance/unlock', {'password': PASSWORD})
+        token = cookie.split(';')[0].split('=', 1)[1]
+        self.run_digest(); self.run_digest(token)
+        self.assertNotIn('locked: not included', self.prompts[-1])
+        entries = [r for r in phd.records() if r['type'] == 'journal']
+        self.assertEqual(len(entries), 1, 'regenerating replaces the same entry')
+        self.assertIn('示例金额 +1', entries[0]['body'])
+
+    def test_digest_needs_the_desk_action_header(self):
+        c = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=10)
+        c.request('POST', '/api/journal/digest', body='{}', headers={'Host': f'127.0.0.1:{self.server.server_port}', 'Content-Type': 'application/json'})
+        self.assertEqual(c.getresponse().status, 403)
+
+
+class JournalDigestPartsTests(unittest.TestCase):
+    """Codex review on PR #5: trashed records, reopened Desk ticks, newest-first finance days."""
+    def test_trashed_records_are_left_out(self):
+        import journal_digest as jd
+        recs = [dict(type='journal', title='kept', date='2030-01-01', body='keep me'), dict(type='journal', title='gone', date='2030-01-01', body='trashed text', deleted_at='2030-01-01T10:00')]
+        part = jd._desk_part(recs, '2030-01-01')
+        self.assertEqual(part['my_own_journal_today'], ['keep me'])
+
+    def test_unticked_desk_item_counts_as_open(self):
+        import journal_digest as jd
+        recs = [dict(kind='task', display_title='组', subtasks=[dict(source_id='s1', display_title='重新打开', status='COMPLETED', done_in_desk=True)])]
+        self.assertEqual([x['title'] for x in jd._paicc_part(recs, '2030-01-01', {})['mail_tasks_still_open']], ['重新打开'])
+        self.assertEqual(jd._paicc_part(recs, '2030-01-01', {'s1': '2029-12-31T10:00:00+00:00'})['mail_tasks_still_open'], [])
+
+    def test_latest_finance_days_even_when_newest_first(self):
+        import journal_digest as jd
+        days = [dict(date=f'2030-01-0{i}', total=i) for i in (5, 4, 3, 2, 1)]
+        out = jd._fic_part([dict(kind='finance_holdings', date='2030-01-05', chart_data=dict(base='CNY', daily_pnl=dict(days=days)))], '2030-01-05')
+        self.assertEqual([d['date'] for d in out['recent_days']], ['2030-01-03', '2030-01-04', '2030-01-05'])

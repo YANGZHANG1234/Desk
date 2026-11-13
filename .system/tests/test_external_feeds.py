@@ -420,3 +420,24 @@ class JournalDigestTests(unittest.TestCase):
         c = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=10)
         c.request('POST', '/api/journal/digest', body='{}', headers={'Host': f'127.0.0.1:{self.server.server_port}', 'Content-Type': 'application/json'})
         self.assertEqual(c.getresponse().status, 403)
+
+
+class JournalDigestPartsTests(unittest.TestCase):
+    """Codex review on PR #5: trashed records, reopened Desk ticks, newest-first finance days."""
+    def test_trashed_records_are_left_out(self):
+        import journal_digest as jd
+        recs = [dict(type='journal', title='kept', date='2030-01-01', body='keep me'), dict(type='journal', title='gone', date='2030-01-01', body='trashed text', deleted_at='2030-01-01T10:00')]
+        part = jd._desk_part(recs, '2030-01-01')
+        self.assertEqual(part['my_own_journal_today'], ['keep me'])
+
+    def test_unticked_desk_item_counts_as_open(self):
+        import journal_digest as jd
+        recs = [dict(kind='task', display_title='组', subtasks=[dict(source_id='s1', display_title='重新打开', status='COMPLETED', done_in_desk=True)])]
+        self.assertEqual([x['title'] for x in jd._paicc_part(recs, '2030-01-01', {})['mail_tasks_still_open']], ['重新打开'])
+        self.assertEqual(jd._paicc_part(recs, '2030-01-01', {'s1': '2029-12-31T10:00:00+00:00'})['mail_tasks_still_open'], [])
+
+    def test_latest_finance_days_even_when_newest_first(self):
+        import journal_digest as jd
+        days = [dict(date=f'2030-01-0{i}', total=i) for i in (5, 4, 3, 2, 1)]
+        out = jd._fic_part([dict(kind='finance_holdings', date='2030-01-05', chart_data=dict(base='CNY', daily_pnl=dict(days=days)))], '2030-01-05')
+        self.assertEqual([d['date'] for d in out['recent_days']], ['2030-01-03', '2030-01-04', '2030-01-05'])

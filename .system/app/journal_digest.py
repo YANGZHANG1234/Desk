@@ -26,6 +26,7 @@ def _clip(text, n):
 
 
 def _desk_part(records, day):
+    records = [r for r in records if not r.get('deleted_at')]  # trashed records are never sent or summarised
     done = [r for r in records if r['type'] == 'tasks' and r.get('completed_date') == day]
     meetings = [r for r in records if r['type'] in ('meetings', 'planning') and (str(r.get('date') or '')[:10] == day or str(r.get('start_time') or '')[:10] == day)]
     notes = [r for r in records if r['type'] == 'journal' and str(r.get('date') or '')[:10] == day and not str(r.get('title', '')).startswith('自动摘记')]
@@ -43,13 +44,15 @@ def _paicc_part(records, day, marks):
     def items(r):
         subs = r.get('subtasks') if isinstance(r.get('subtasks'), list) and r.get('subtasks') else [r]
         return [{'id': s.get('source_id'), 'title': s.get('display_title') or s.get('title_zh') or s.get('title') or r.get('display_title') or r.get('title'),
-                 'status': s.get('status'), 'deadline': s.get('deadline_at') or r.get('deadline_at')} for s in subs]
+                 'status': s.get('status'), 'done_in_desk': s.get('done_in_desk') is True or (s is r and r.get('done_in_desk') is True),
+                 'deadline': s.get('deadline_at') or r.get('deadline_at')} for s in subs]
     ticked, still_open = [], []
     for r in tasks:
         for it in items(r):
             done_at = marks.get(it['id'] or '')
             if done_at and _day(done_at) == day: ticked.append(it['title'])
-            elif not done_at and str(it['status'] or '').lower() not in ('done', 'completed', 'cancelled', 'archived'):
+            # Desk's live marks decide Desk-owned items (PAICC re-exports them as COMPLETED until its next run).
+            elif not done_at and (it['done_in_desk'] or str(it['status'] or '').lower() not in ('done', 'completed', 'cancelled', 'archived')):
                 still_open.append({'title': it['title'], 'deadline': it['deadline'] or '', 'from': r.get('email_sender') or r.get('sender_name') or '',
                                    'summary': _clip(r.get('summary_zh') or r.get('summary'), 200)})
     meetings = []
@@ -70,7 +73,7 @@ def _fic_part(records, day):
     out = {}
     if holdings:
         cd = holdings[0].get('chart_data') or {}
-        days = ((cd.get('daily_pnl') or {}).get('days') or [])
+        days = sorted((d for d in ((cd.get('daily_pnl') or {}).get('days') or []) if isinstance(d, dict)), key=lambda d: str(d.get('date') or ''))
         out['base_currency'] = cd.get('base')
         out['recent_days'] = [{k: d.get(k) for k in ('date', 'total', 'change', 'change_pct', 'exact', 'est')} for d in days[-3:]]
         if cd.get('goal'): out['goal'] = {k: cd['goal'].get(k) for k in ('target', 'goal_date', 'progress_pct', 'gap', 'days_left', 'required_annualised_pct')}

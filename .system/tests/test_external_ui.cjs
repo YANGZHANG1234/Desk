@@ -162,7 +162,7 @@ assert(hold.includes('−50')&&hold.includes('+80')&&hold.includes(`left:auto;ri
 assert(!hold.includes('<b>Acct</b>')&&hold.includes('&lt;b&gt;Acct'),'labels escaped');
 assert(hold.includes('持仓明细 Details')&&(hold.match(/表格 Table/g)||[]).length===6,'detail table collapsed, every chart has a table view');
 assert(!/<script|https?:\/\/(?!example)/.test(hold.replace(/xmlns="[^"]*"/g,'')),'no external resources');
-let rev=f.slice(f.indexOf('id="finance-review"'),f.indexOf('id="finance-holdings"'));
+let rev=f.slice(f.indexOf('id="finance-review"'),f.indexOf('id="finance-latest"'));
 assert(rev.includes('Claude 观点')&&rev.includes('信心 高')&&rev.includes('信心 低')&&rev.includes('信心 中')&&rev.includes('理由甲')&&rev.includes('风险甲'),'views with confidence labels');
 assert(rev.indexOf('较早事项')<rev.indexOf('较晚事项')&&rev.indexOf('较晚事项')<rev.indexOf('无日期事项'),'follow-ups sorted by due, null last');
 assert((rev.match(/external-check checked/g)||[]).length===1&&rev.includes('复盘全文'),'done follow-up checked; full text folded');
@@ -222,14 +222,14 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  const cd={base:'CNY',total:1000,by_category:[],goal:{target:'1000000',goal_date:'2031-01-01',start_date:'2030-01-01',as_of:'2030-01-02',total:'250000',gap:'750000',reached:false,progress_pct:'25.0',days_left:364,required_return_pct:'300.0',required_annualised_pct:'301.2',note:'示例说明'},
   daily_pnl:{base:'CNY',days:[{date:'2030-01-01',total:249000,change:null},{date:'2030-01-02',total:250000,change:1000,change_pct:0.4}]}};
  const view=(folded={})=>{vm.runInContext('financeFolded='+JSON.stringify(folded),ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:cd,body:''}]}]};return ctx.financeView()};
- let v=view(),goal=v.slice(v.indexOf('data-fin-panel="goal"'),v.indexOf('data-fin-panel="trend"'));
- assert(v.indexOf('data-fin-panel="goal"')<v.indexOf('data-fin-panel="trend"'),'goal panel first');
+ let v=view(),goal=v.slice(v.indexOf('data-fin-panel="goal"'),v.indexOf('</figure>',v.indexOf('data-fin-panel="goal"')));
+ assert(v.indexOf('data-fin-panel="trend"')<v.indexOf('data-fin-panel="goal"'),'trend before goal (CIO V2.0 order)');
  assert(goal.includes('25.0%')&&goal.includes('width:25.00%')&&goal.includes('750,000')&&goal.includes('364 天')&&goal.includes('还需增长 <b>300.0%</b>（年化 301.2%）')&&goal.includes('示例说明'),'goal figures');
  assert(!/买|卖|buy|sell|交易|trade/i.test(goal.replace(/<[^>]+>/g,'')),'no trade wording');
  assert(v.includes('高于当前图表范围')&&!/stroke-dasharray="5 4"/.test(v),'far target noted, not drawn');
  cd.goal.target='100';v=view();assert(v.includes('低于当前图表范围')&&!v.includes('高于当前图表范围'),'far-below target says below');
  cd.goal.target='250500';v=view();assert(/stroke-dasharray="5 4"/.test(v)&&v.includes('虚线 = 目标'),'near target drawn as dashed line');
- let f=view({goal:true});assert(!f.slice(f.indexOf('data-fin-panel="goal"'),f.indexOf('data-fin-panel="trend"')).match(/750,000|250,500|25\.0%/),'folded goal renders no amounts');
+ let f=view({goal:true});assert(!f.slice(f.indexOf('data-fin-panel="goal"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="goal"'))).match(/750,000|250,500|25\.0%/),'folded goal renders no amounts');
  cd.goal=null;assert(!view().includes('data-fin-panel="goal"'),'no goal, no panel');
  vm.runInContext('financeFolded={}',ctx);console.log('Finance goal passed');
 }
@@ -247,7 +247,7 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  let cats=panel.slice(panel.indexOf('fin-ctl-cats'),panel.indexOf('fin-ctl-list'));
  assert(cats.indexOf('2030-01-03')<cats.indexOf('2030-01-09')&&!cats.includes('2029-12-01'),'upcoming dates sorted, past dropped');
  assert(panel.includes('示例论点')&&panel.includes('示例失效')&&panel.includes('<li>示例观察</li>')&&panel.includes('<td>-10.0%</td>'),'details include thesis, kill, watch and thresholds');
- assert(!/买入|卖出|加仓|减仓|下单|buy|sell|trade/i.test(panel.replace(/<[^>]+>/g,'')),'no trade wording');
+ assert(!/买入|卖出|加仓|减仓|下单|buy|sell|trade/i.test(panel.replace(/<[^>]+>/g,'').split('到达提醒线＝重新判断，不是卖出指令').join('')),'no trade wording besides the fixed alert-line note');
  assert(!/<button(?![^>]*data-fin-fold)/.test(panel),'no action buttons besides fold');
  let f=view({control:true}),fp=f.slice(f.indexOf('data-fin-panel="control"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="control"')));
  assert(!/31\.0%|示例卡|2030-01-03/.test(fp),'folded control panel renders nothing');
@@ -266,4 +266,27 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(!view([card({thesis_check:null})]).includes('fin-thesis '),'no thesis check, no block');
  let f=view([card({thesis_check:{status:'动摇',reason:'示例理由'},exit_plan:'示例退出'})],{control:true});assert(!/示例理由|示例退出|动摇/.test(f.slice(f.indexOf('data-fin-panel="control"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="control"')))),'folded shows nothing');
  vm.runInContext('financeFolded={}',ctx);console.log('Finance thesis check passed');
+}
+
+// CIO V2.0 group A (fabricated): order, decision block, thesis vs alert lines, uncovered categories.
+{
+ const cd={base:'CNY',by_category:[{key:'eq',label_zh:'示例股票',weight:60,value:1},{key:'pe',label_zh:'示例私募',weight:30,value:1},{key:'cash',label_zh:'示例现金',weight:10,value:1}],
+  decision:{status:'关注',reason:'示例原因',as_of:'2030-01-02'},
+  daily_pnl:{base:'CNY',days:[{date:'2030-01-02',total:100,change:1,change_pct:1}]},
+  control:{cards:[{id:'a',title:'示例卡',status:'ok',groups:['eq'],baseline:'2030-01-01',thesis_check:{status:'成立',reason:'示例依据',on:'2030-01-02'},exit_plan:'用户原文：分批退出',switch_candidate:'待你确认',
+   triggers:[{id:'t',label:'示例跌幅',type:'group_change',value:'-1%',threshold:'-8%',status:'ok'},{id:'d',label:'示例日期',type:'date',on:'2030-01-05',days_to:3,status:'ok'}]}]}};
+ const view=()=>{vm.runInContext('financeFolded={}',ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:cd,body:'x'}]}]};return ctx.financeView()};
+ let v=view(),at=k=>v.indexOf(k);
+ assert(at('data-fin-panel="decision"')<at('data-fin-panel="trend"')&&at('data-fin-panel="trend"')<at('data-fin-panel="control"')&&at('data-fin-panel="control"')<at('id="finance-holdings"')&&at('id="finance-holdings"')<at('id="finance-alerts"'),'conclusion, trend, control cards, holdings, then the rest');
+ assert(v.includes('fin-status-warn">关注')&&v.includes('示例原因')&&v.includes('今天没有需要你决定的事'),'decision status, reason, empty decisions');
+ let card=v.slice(at('class="fin-ctl-cols"'));
+ assert(card.indexOf('逻辑状态')<card.indexOf('示例依据')&&card.indexOf('示例依据')<card.indexOf('提醒线 Alert lines')&&card.indexOf('提醒线 Alert lines')<card.indexOf('示例跌幅'),'thesis and alert lines in separate columns');
+ assert(card.includes('到达提醒线＝重新判断，不是卖出指令')&&card.includes('<b>基线日期</b> 2030-01-01')&&v.includes('基线 2030-01-01'),'fixed note and baseline date');
+ assert(v.includes('<b>退出方式</b> 用户原文：分批退出'),'approved text shown verbatim');
+ assert(v.includes('<b>未建立监控</b> 示例私募、示例现金'),'uncovered categories listed');
+ cd.control.uncovered=['pe'];assert(view().includes('<b>未建立监控</b> 示例私募')&&!view().includes('示例私募、示例现金'),'export-provided uncovered list wins');
+ delete cd.decision;assert(!view().includes('data-fin-panel="decision"'),'no decision field, no block');
+ cd.decisions_needed=[{item:'示例事项',analysis:'示例分析',options:['方案一','方案二'],due:'2030-01-09'}];let n=view();
+ assert(n.includes('示例事项')&&n.includes('可选：方案一 / 方案二')&&n.includes('截止 2030-01-09')&&!/<button(?![^>]*data-fin-fold)/.test(n.slice(n.indexOf('data-fin-panel="decision"'),n.indexOf('</figure>',n.indexOf('data-fin-panel="decision"')))),'decisions shown, no action buttons');
+ console.log('Finance CIO V2.0 group A passed');
 }

@@ -268,6 +268,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(403)
         if self.path in ['/api/finance/unlock','/api/finance/lock']:return self.finance_post()
         if self.path=='/api/task-marks':return self.task_marks_post()
+        if self.path=='/api/journal/digest':return self.journal_digest_post()
         if self.path not in ['/api/actions','/api/zotero/sync','/api/literature/jobs','/api/literature/control','/api/literature/relation','/api/literature/links']:return self.send_error(404)
         try:
             length=int(self.headers.get('Content-Length','0'))
@@ -299,6 +300,18 @@ class Handler(BaseHTTPRequestHandler):
         data=json.dumps(body if body is not None else {'error':message}).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store')
         if cookie:self.send_header('Set-Cookie',cookie)
         self.end_headers();self.wfile.write(data)
+    def journal_digest_post(self):
+        # User-requested daily digest: the only path that sends exports to the local Codex CLI.
+        import journal_digest, sys
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if length<0 or length>1024:raise ValueError('Invalid request size')
+            payload=json.loads(self.rfile.read(length) or b'{}')
+            if not isinstance(payload,dict):raise ValueError('Invalid request')
+            result=journal_digest.generate(sys.modules[__name__],payload.get('date') or None,self.finance_token())
+        except (ValueError,TypeError) as e:return self.json_error(400,str(e))
+        except Exception:return self.json_error(502,'Could not write the summary. Check that Codex is signed in, then try again.')
+        self.send_bytes(json.dumps(result).encode(),'application/json')
     def task_marks_post(self):
         # Ticking a PAICC task stores only its id in Desk's own state file; exports stay untouched.
         import task_marks

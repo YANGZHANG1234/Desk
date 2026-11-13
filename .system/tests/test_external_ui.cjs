@@ -4,7 +4,7 @@ const src=fs.readFileSync('.system/app/desk.js','utf8');
 const ctx={E:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),I:()=>'',localDate:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,dateText:d=>d,route:'briefing'};
 ctx.today=()=>ctx.localDate(new Date());ctx.pageHeading=t=>`<h1>${t}</h1>`;vm.createContext(ctx);
 vm.runInContext(src.slice(src.indexOf('let externalData='),src.indexOf('async function loadExternal(')).replace(/^let externalData=/m,'var externalData=').replace(/,taskMarks=\{\},externalLoadedAt=0;/,';var taskMarks={},externalLoadedAt=0;'),ctx);
-const now=new Date(),iso=new Date(now.getTime()+3600e3).toISOString(),later=new Date(now.getTime()+3*864e5).toISOString();
+const now=new Date(),iso=new Date(Math.min(now.getTime()+3600e3,new Date(now.getFullYear(),now.getMonth(),now.getDate(),23,59,59).getTime())).toISOString(),later=new Date(now.getTime()+3*864e5).toISOString();
 const rec=(o)=>({source:'paicc',source_label:'PAICC',read_only:true,demo:false,updated_at:iso,...o});
 ctx.externalData={export_root:'/tmp/x',sources:[
  {label:'PAICC',exists:true,manifest:{exported_at:iso,schema_version:1},warnings:[],records:[
@@ -307,4 +307,46 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  let f=view({positions:true}),fp=f.slice(f.indexOf('data-fin-panel="positions"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="positions"')));assert(!/示例基金|60\.0%|2030-01-02/.test(fp),'folded positions render nothing');
  let s=view({'s-holdings':true});assert(!s.includes('示例基金'),'folded holdings section hides positions');
  vm.runInContext('financeFolded={}',ctx);console.log('Finance positions passed');
+}
+
+// FD-068/069 daily adjustment view (fabricated): top actions, cash, adjustment table, reliability, every-position review.
+{
+ const snap={total:'1000',groups_pct:{cash_cny:'40.0',fixed_income:'60.0'},top1_pct:'30.0',within_2_days_pct:'40.0',stress_pct:{'rates_+100bp':'-1.0','global_equity_-20':'-2.0',combined_crisis:'-3.0'}};
+ const after={...snap,groups_pct:{cash_cny:'20.0',fixed_income:'80.0'}};
+ const cd={base:'CNY',by_category:[],
+  positions:[{name:'甲',weight:70,basis:'nav_close'},{name:'乙',weight:30,basis:'statement'}],
+  proposals:{as_of:'2030-01-02',base:'CNY',before:snap,after_all:after,note:'示例方案说明原文',proposals:[
+   {id:'p1',title:'示例行动一',status:'条件性方案',assumptions:['示例假设甲','示例假设乙'],why_size:'示例规模',why_now:'示例时机',strongest_objection:'示例反对',revoke_if:'示例撤销',confidence:'中',evidence:'示例依据',evaluated:true,resolved_moves:[{from:'示例现金',to_name:'示例去处',to_group:'fixed_income',amount:'200',carry_per_year:'4',rates_pct:'2.0'}],after},
+   {id:'p2',title:'示例行动二',status:'已批准',assumptions:['不应显示的假设'],why_now:'示例时机二',resolved_moves:[],after},
+   {id:'p3',title:'示例行动三',status:'待你批准',resolved_moves:[],after},
+   {id:'p4',title:'第四项不显示',status:'待你批准',resolved_moves:[],after}]},
+  position_table:{as_of:'2030-01-02',total:'1000',changed:1,note:'示例调整表说明原文',before:snap,after_all:after,
+   rows:[{key:'a',name:'示例调整行',value:'400',current_pct:'40.0',target_pct:'20.0',change_amount:'-200',leaning:'减持',reason:'示例理由',destination:'示例去处',evidence:'official',status:'条件性方案',needs_approval:true},
+    {key:'b',name:'示例维持行',value:'600',current_pct:'60.0',target_pct:'60.0',change_amount:'0',leaning:'保留',reason:'',destination:null,evidence:'none',status:'维持原仓位',needs_approval:false}],
+   destinations:[{name:'示例去处',current_pct:'0.0',target_pct:'20.0',change_amount:'200'}]},
+  review:{as_of:'2030-01-02',total:'1000',positions:2,not_assessed:0,changed_today:['a'],no_product_evidence_pct:'60.0',data_status:'示例数据状态',
+   by_leaning:[{leaning:'减持',count:1,weight_pct:'40.0'},{leaning:'保留',count:1,weight_pct:'60.0'}],
+   rows:[{key:'a',account:'示例账户',symbol:'S1',name:'示例复核行',value:'400',weight_pct:'40.0',price_date:'2030-01-01',basis:'nav_close',leaning:'减持',thesis:'示例论点',for:'示例支持',against:'示例反对理由',trigger:'示例触发',confidence:'低',judged_on:'2030-01-02',changed_on:'2030-01-02',changed_today:true,evidence:'third_party'}],
+   cash:{bank_cash:'400',bank_cash_pct:'40.0',note:'示例情景说明原文',options:[{name:'示例活期',rate:'0.1%',source:'示例来源',as_of:'2030-01-01',guaranteed:true,liquidity:'T+0',is_current:true},{name:'示例货基',rate:'1.5%',source:'示例来源',as_of:'2030-01-01',guaranteed:false,liquidity:'T+1',is_current:false}],
+    scenarios:[{reserve:'100',movable:'300',movable_pct:'30.0',extra_per_year:[{option:'示例货基',rate_pct:'1.5',extra:'4'}]},{reserve:'200',movable:'200',movable_pct:'20.0',extra_per_year:[{option:'示例货基',rate_pct:'1.5',extra:'3'}]}]}}};
+ const view=(folded={})=>{vm.runInContext('financeFolded='+JSON.stringify(folded),ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:cd,body:'x'}]}]};return ctx.financeView()};
+ const panel=(v,id)=>v.slice(v.indexOf(`data-fin-panel="${id}"`),v.indexOf('</figure>',v.indexOf(`data-fin-panel="${id}"`)));
+ let v=view(),at=k=>v.indexOf(`data-fin-panel="${k}"`);
+ assert(at('decision')<0||at('decision')<at('actions'),'conclusion first');
+ assert(at('actions')<at('cash')&&at('cash')<at('adjust')&&at('adjust')<at('trust')&&at('trust')<v.indexOf('id="finance-holdings"')&&v.indexOf('id="finance-holdings"')<at('review')&&at('review')<at('positions'),'actions, cash, table, reliability, then the second layer');
+ let a=panel(v,'actions');
+ assert(a.includes('示例行动一')&&a.includes('示例行动二')&&a.includes('示例行动三')&&!a.includes('第四项不显示'),'only the first three proposals');
+ assert(a.includes('条件性方案 · 尚未批准')&&a.includes('<li>示例假设甲</li>')&&a.includes('<li>示例假设乙</li>')&&!a.includes('不应显示的假设'),'conditional flagged with every assumption; approved one lists none');
+ assert(a.includes('示例时机')&&a.includes('示例反对')&&a.includes('示例撤销')&&a.includes('示例依据')&&a.includes('示例方案说明原文'),'why now, objection, revoke, evidence and note');
+ let c=panel(v,'cash');assert(c.includes('示例情景说明原文')&&c.includes('备用金 100')&&c.includes('+4')&&c.includes('示例活期'),'cash scenarios, note verbatim, options');
+ let t=panel(v,'adjust');
+ assert(t.indexOf('示例调整行')<t.indexOf('维持原仓位（1 条）')&&t.indexOf('维持原仓位（1 条）')<t.indexOf('示例维持行'),'approval rows shown, the rest folded');
+ assert(t.includes('新增去向')&&t.includes('−200')&&t.includes('官方文件')&&t.includes('<b>需要</b>')&&t.includes('示例调整表说明原文')&&t.includes('全部执行后')&&t.includes('综合危机'),'table columns, destinations, before/after and note');
+ let r=panel(v,'trust');assert(r.includes('<b>按对账单</b> 30.0%')&&r.includes('无法独立核对')&&r.includes('<b>信息风险</b> 60.0%')&&r.includes('示例数据状态'),'reliability with information risk');
+ let rv=panel(v,'review');assert(rv.includes('判断日期 2030-01-02')&&rv.includes('判断 2030-01-02')&&rv.includes('示例反对理由')&&rv.includes('第三方平台')&&rv.includes('今天变更'),'review shows judged dates and reasons');
+ assert(!/每日自动|自动更新|auto-?update/i.test(v),'no claim of automatic daily updates');
+ for(const id of ['actions','cash','adjust','trust','review'])assert(!/<button(?![^>]*data-fin-fold)/.test(panel(v,id)),'no action buttons in '+id);
+ let f=view({actions:true,cash:true,adjust:true,trust:true,review:true});for(const id of ['actions','cash','adjust','trust','review'])assert(!/示例|\d\.\d%/.test(panel(f,id).replace(/<figcaption>.*?<\/figcaption>/,'')),'folded '+id+' renders nothing');
+ delete cd.proposals;delete cd.position_table;delete cd.review;let g=view();assert(!['actions','cash','adjust','review'].some(k=>g.includes(`data-fin-panel="${k}"`)),'missing fields hide their blocks');
+ vm.runInContext('financeFolded={}',ctx);console.log('Finance daily adjustment view passed');
 }

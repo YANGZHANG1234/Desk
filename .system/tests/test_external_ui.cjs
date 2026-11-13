@@ -253,3 +253,17 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(!/31\.0%|示例卡|2030-01-03/.test(fp),'folded control panel renders nothing');
  vm.runInContext('financeFolded={}',ctx);console.log('Finance control cards passed');
 }
+
+// FD-060 thesis check, exit plan and switch candidate (fabricated).
+{
+ const card=(o)=>({id:'x',title:'示例卡',status:'warn',groups:[],triggers:[{id:'th',label:'论点检查',type:'thesis',value:'动摇（2030-01-02）',status:'warn',reason:'示例理由'}],...o});
+ const view=(cards,folded={})=>{vm.runInContext('financeFolded='+JSON.stringify(folded),ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:{base:'CNY',by_category:[],control:{cards}},body:''}]}]};return ctx.financeView()};
+ let v=view([card({thesis_check:{status:'动摇',reason:'示例理由',source:'https://example.invalid/a',on:'2030-01-02'},exit_plan:'待你确认 / to confirm',switch_candidate:'示例去向'})]);
+ assert(v.includes('fin-thesis-shaken')&&v.includes('论点 动摇')&&v.includes('href="https://example.invalid/a"')&&v.includes('2030-01-02'),'thesis status, link and date');
+ assert(v.includes('<b>退出方式</b> <span class="fin-unset">待你确认</span>')&&v.includes('<b>资金去向</b> 示例去向'),'unset plan highlighted, set plan shown');
+ assert(v.includes('动摇（2030-01-02）')&&v.includes('<div class="tiny-label">示例理由</div>'),'thesis trigger row with reason');
+ let bad=view([card({thesis_check:{status:'破坏',source:'javascript:alert(1)'}})]);assert(bad.includes('fin-thesis-broken')&&!bad.includes('javascript:'),'broken thesis red, unsafe link dropped');
+ assert(!view([card({thesis_check:null})]).includes('fin-thesis '),'no thesis check, no block');
+ let f=view([card({thesis_check:{status:'动摇',reason:'示例理由'},exit_plan:'示例退出'})],{control:true});assert(!/示例理由|示例退出|动摇/.test(f.slice(f.indexOf('data-fin-panel="control"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="control"')))),'folded shows nothing');
+ vm.runInContext('financeFolded={}',ctx);console.log('Finance thesis check passed');
+}

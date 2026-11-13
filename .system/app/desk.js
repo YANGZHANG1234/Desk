@@ -187,6 +187,27 @@ function finGoal(cd){
  ${g.reached!==true&&isFinite(req)?`<p class="fin-goal-req">还需增长 <b>${req.toFixed(1)}%</b>${isFinite(ann)?`（年化 ${ann.toFixed(1)}%）`:''}</p>`:''}${g.note?`<p class="tiny-label fin-goal-note">${E(g.note)}</p>`:''}</div>`;
  return finCard('目标进度','Goal progress',body,'goal');
 }
+// 控制卡 (FD-058): review triggers per holding group. Analysis only: no trade wording or actions.
+const FIN_CARD_STATUS={ok:['正常','ok'],warn:['接近','warn'],review:['⚠️ 触发复核','review'],due:['📅 今日要看','due'],review_due:['到复核日','review-due']};
+const FIN_TRIG_STATUS={ok:['正常','ok'],warn:['接近','warn'],review:['⚠️ 触发复核','review'],due:['📅 今日','due'],passed:['已过','passed'],no_data:['无数据','nodata']};
+const FIN_SEVERITY={review:5,due:4,review_due:4,warn:3,ok:1,passed:0,no_data:0};
+const finPctNum=v=>{let n=parseFloat(String(v??'').replace(/[,%＋+]/g,'').replace('−','-'));return isFinite(n)?n:NaN};
+function finTrigCloseness(t){if(t.type==='date')return t.days_to==null||t.days_to<0?-1:1/(1+Number(t.days_to));let v=finPctNum(t.value),th=finPctNum(t.threshold);return isFinite(v)&&isFinite(th)&&th?Math.abs(v)/Math.abs(th):-1}
+function finNearest(card,n=2){let live=(card.triggers||[]).filter(t=>!['passed','no_data'].includes(t.status));return live.sort((a,b)=>(FIN_SEVERITY[b.status]||0)-(FIN_SEVERITY[a.status]||0)||finTrigCloseness(b)-finTrigCloseness(a)).slice(0,n)}
+function finTrigText(t){return t.type==='date'?`${E(t.label)} · ${E(t.on||'')}${t.days_to!=null?` · ${t.days_to>0?E(t.days_to)+' 天后':t.days_to===0?'今天':'已过'}`:''}`:`${E(t.label)} · ${E(t.value??'—')} / ${E(t.threshold??'—')}`}
+const finBadge=(map,st)=>{let [zh,cls]=map[st]||[String(st||'—'),'ok'];return `<span class="fin-status fin-status-${cls}">${E(zh)}</span>`};
+function finControl(cd){
+ let c=cd&&cd.control,cards=Array.isArray(c?.cards)?[...c.cards]:[];if(!cards.length)return '';
+ cards.sort((a,b)=>(FIN_SEVERITY[b.status]||0)-(FIN_SEVERITY[a.status]||0));
+ let counts=cards.reduce((m,x)=>(m[x.status]=(m[x.status]||0)+1,m),{});
+ let summary=Object.keys(FIN_CARD_STATUS).filter(k=>counts[k]).map(k=>`${finBadge(FIN_CARD_STATUS,k)} ${counts[k]}`).join(' ');
+ let cats=cards.flatMap(x=>(x.triggers||[]).filter(t=>t.type==='date'&&t.days_to!=null&&t.days_to>=0).map(t=>({...t,card:x.title}))).sort((a,b)=>a.days_to-b.days_to).slice(0,3);
+ let rows=cards.map(x=>{let near=finNearest(x);return `<details class="fin-ctl-card fin-ctl-${E((FIN_CARD_STATUS[x.status]||['','ok'])[1])}"><summary><span class="fin-ctl-head"><b>${E(x.title)}</b>${finBadge(FIN_CARD_STATUS,x.status)}</span><span class="fin-ctl-near">${near.map(t=>`<span>${finBadge(FIN_TRIG_STATUS,t.status)} ${finTrigText(t)}</span>`).join('')||'<span class="tiny-label">没有进行中的触发条件</span>'}</span></summary>
+ <div class="fin-ctl-body">${[['论点 Thesis',x.thesis],['失效条件 Kill',x.kill],['计划 Plan',x.plan],['基准 Baseline',x.baseline],['下次复核 Next review',x.next_review]].filter(([,v])=>v).map(([l,v])=>`<p><b>${E(l)}</b> ${E(v)}</p>`).join('')}${Array.isArray(x.groups)&&x.groups.length?`<p><b>覆盖 Groups</b> ${x.groups.map(E).join('、')}</p>`:''}${Array.isArray(x.watch)&&x.watch.length?`<div><b>观察 Watch</b><ul>${x.watch.map(w=>`<li>${E(w)}</li>`).join('')}</ul></div>`:''}
+ <div class="reading-table"><table><thead><tr><th>触发条件</th><th>当前</th><th>阈值 / 日期</th><th>状态</th></tr></thead><tbody>${(x.triggers||[]).map(t=>`<tr><td>${E(t.label)}</td><td>${t.type==='date'?(t.days_to!=null?(t.days_to>=0?E(t.days_to)+' 天':'已过'):'—'):E(t.value??'—')}${t.since&&t.latest?` <span class="tiny-label">${E(t.since)} → ${E(t.latest)}</span>`:''}</td><td>${E(t.type==='date'?t.on||'—':t.threshold??'—')}</td><td>${finBadge(FIN_TRIG_STATUS,t.status)}</td></tr>`).join('')}</tbody></table></div></div></details>`}).join('');
+ let body=`<div class="fin-ctl-summary">${summary}${c.as_of?`<span class="tiny-label">截至 ${E(c.as_of)}</span>`:''}</div>${cats.length?`<div class="fin-ctl-cats"><span class="tiny-label">近期日期 Upcoming dates</span>${cats.map(t=>`<span class="fin-ctl-cat"><b>${E(t.on||'')}</b> ${E(t.label)} <span class="tiny-label">${E(t.card)} · ${t.days_to===0?'今天':E(t.days_to)+' 天后'}</span></span>`).join('')}</div>`:''}<div class="fin-ctl-list">${rows}</div>${c.note?`<p class="tiny-label fin-ctl-note">${E(c.note)}</p>`:''}`;
+ return finCard('控制卡','Control cards',body,'control');
+}
 function financeCharts(cd){
  if(!cd||typeof cd!=='object')return '';let base=String(cd.base||'');
  let parts=[finDonut(cd)];
@@ -217,7 +238,7 @@ function financeView(){
  if(!fin.length)return h.replace('__FIN_FOLD_ALL__','全部收起 Collapse all')+'<div class="quiet-empty">No finance exports yet.</div>';
  let daily=fin.filter(r=>externalKind(r)==='finance_daily').sort(externalSort('finance_daily')),alerts=fin.filter(r=>externalKind(r)==='finance_alert').sort(externalSort('finance_alert')),learning=fin.filter(r=>externalKind(r)==='learning').sort(externalSort('learning')),reviews=fin.filter(r=>externalKind(r)==='finance_review').sort((a,b)=>String(b.date||b.updated_at||'').localeCompare(String(a.date||a.updated_at||''))),latest=daily[0],review=reviews[0],holdings=fin.filter(r=>externalKind(r)==='finance_holdings').sort(externalSort('finance_holdings'))[0];
  let section=(id,label,zh,body)=>{let f=finFolded('s-'+id);return `<section class="section external-section${f?' is-folded':''}" id="finance-${id}" data-fin-panel="s-${id}"><div class="section-head"><h2>${E(zh)} <span class="external-zh">${E(label)}</span></h2>${finFoldButton('s-'+id,zh)}</div>${f?'':body}</section>`};
- let trend=holdings?finGoal(holdings.chart_data)+finTrend(holdings.chart_data):'';if(trend)h+=`<div class="fin-charts fin-trend">${trend}</div>`;
+ let trend=holdings?finControl(holdings.chart_data)+finGoal(holdings.chart_data)+finTrend(holdings.chart_data):'';if(trend)h+=`<div class="fin-charts fin-trend">${trend}</div>`;
  h+=section('alerts','Alerts','提醒',`<div class="external-list">${alerts.map(r=>externalItem(r)).join('')||'<div class="quiet-empty">No alerts</div>'}</div>`);
  h+=section('review','Daily review','每日复盘',review?`<article class="external-item finance-report">${externalItem({...review,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeViews(review.views)}${financeFollowups(review.followups)}${review.views||review.followups?`<details class="external-body"><summary>复盘全文 Full review</summary><div class="external-markdown">${externalMarkdown(review.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(review.body)}</div>`}</article>${reviews.length>1?`<h4 class="external-sub">Earlier reviews</h4><div class="external-list">${reviews.slice(1,14).map(r=>externalItem(r)).join('')}</div>`:''}`:'<div class="quiet-empty">No review exported yet</div>');
  h+=section('holdings','Holdings','持仓',holdings?`<article class="external-item finance-report">${externalItem({...holdings,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeCharts(holdings.chart_data)}${holdings.chart_data?`<details class="external-body"><summary>持仓明细 Details</summary><div class="external-markdown">${externalMarkdown(holdings.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(holdings.body)}</div>`}</article>`:'<div class="quiet-empty">No holdings exported yet</div>');

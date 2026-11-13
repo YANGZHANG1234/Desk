@@ -233,3 +233,23 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  cd.goal=null;assert(!view().includes('data-fin-panel="goal"'),'no goal, no panel');
  vm.runInContext('financeFolded={}',ctx);console.log('Finance goal passed');
 }
+
+// FD-058 control cards (fabricated).
+{
+ const cd={base:'CNY',total:1,by_category:[],control:{as_of:'2030-01-02',note:'复核提醒，不是交易指令。',cards:[
+  {id:'a',title:'示例卡甲',groups:['g1'],baseline:'2030-01-01',status:'ok',thesis:'示例论点',kill:'示例失效',watch:['示例观察'],plan:'示例计划',next_review:'2030-02-01',triggers:[{id:'t1',label:'示例跌幅',type:'group_change',value:'-2.0%',threshold:'-10.0%',status:'ok'},{id:'t2',label:'示例日期',type:'date',on:'2030-01-09',days_to:7,status:'ok'}]},
+  {id:'b',title:'示例卡乙',groups:[],status:'review',thesis:'',kill:'',watch:[],plan:'',triggers:[{id:'t3',label:'示例权重',type:'weight_above',value:'31.0%',threshold:'30.0%',status:'review'},{id:'t4',label:'示例会议',type:'date',on:'2030-01-03',days_to:1,status:'ok'},{id:'t5',label:'旧事件',type:'date',on:'2029-12-01',days_to:-32,status:'passed'}]}]}};
+ const view=(folded={})=>{vm.runInContext('financeFolded='+JSON.stringify(folded),ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:cd,body:''}]}]};return ctx.financeView()};
+ let v=view(),panel=v.slice(v.indexOf('data-fin-panel="control"'),v.indexOf('</figure>',v.indexOf('data-fin-panel="control"')));
+ assert(v.indexOf('data-fin-panel="control"')<v.indexOf('id="finance-alerts"'),'control panel at the top');
+ assert(panel.indexOf('示例卡乙')<panel.indexOf('示例卡甲'),'cards needing review first');
+ assert(panel.includes('fin-status-review">⚠️ 触发复核')&&panel.includes('示例权重 · 31.0% / 30.0%'),'status badge and nearest trigger');
+ let cats=panel.slice(panel.indexOf('fin-ctl-cats'),panel.indexOf('fin-ctl-list'));
+ assert(cats.indexOf('2030-01-03')<cats.indexOf('2030-01-09')&&!cats.includes('2029-12-01'),'upcoming dates sorted, past dropped');
+ assert(panel.includes('示例论点')&&panel.includes('示例失效')&&panel.includes('<li>示例观察</li>')&&panel.includes('<td>-10.0%</td>'),'details include thesis, kill, watch and thresholds');
+ assert(!/买入|卖出|加仓|减仓|下单|buy|sell|trade/i.test(panel.replace(/<[^>]+>/g,'')),'no trade wording');
+ assert(!/<button(?![^>]*data-fin-fold)/.test(panel),'no action buttons besides fold');
+ let f=view({control:true}),fp=f.slice(f.indexOf('data-fin-panel="control"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="control"')));
+ assert(!/31\.0%|示例卡|2030-01-03/.test(fp),'folded control panel renders nothing');
+ vm.runInContext('financeFolded={}',ctx);console.log('Finance control cards passed');
+}

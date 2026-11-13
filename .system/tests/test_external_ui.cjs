@@ -290,3 +290,20 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(n.includes('示例事项')&&n.includes('可选：方案一 / 方案二')&&n.includes('截止 2030-01-09')&&!/<button(?![^>]*data-fin-fold)/.test(n.slice(n.indexOf('data-fin-panel="decision"'),n.indexOf('</figure>',n.indexOf('data-fin-panel="decision"')))),'decisions shown, no action buttons');
  console.log('Finance CIO V2.0 group A passed');
 }
+
+// FD-063 positions with price date and basis; uncovered weights (fabricated).
+{
+ const cd={base:'CNY',by_category:[],control:{cards:[{id:'a',title:'卡',status:'ok',groups:[],triggers:[]}],uncovered:[{key:'pe',label_zh:'示例私募',weight:12.5}]},
+  positions:[{account:'A',name:'示例基金',symbol:'X1',category:'股票',category_key:'eq',qty:'100',price:'1.23',currency:'CNY',value:600,weight:60,pnl:12,price_date:'2030-01-02',basis:'nav_close'},
+   {account:'B',name:'示例私募',symbol:'',category:'私募',category_key:'pe',qty:'1',price:null,currency:'CNY',value:300,weight:30,pnl:null,price_date:null,basis:'statement'},
+   {account:'C',name:'示例旧价',symbol:'',category:'债券',category_key:'fi',qty:'2',price:'5',currency:'USD',value:100,weight:10,pnl:-1,price_date:'2029-11-01',basis:'stale'}]};
+ const view=(folded={})=>{vm.runInContext('financeFolded='+JSON.stringify(folded),ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:cd,body:'x'}]}]};return ctx.financeView()};
+ let v=view(),pos=v.slice(v.indexOf('data-fin-panel="positions"'),v.indexOf('</figure>',v.indexOf('data-fin-panel="positions"')));
+ assert(pos.includes('<b>每日净值或收盘价</b> 60.0%')&&pos.includes('<b>按对账单</b> 30.0%')&&pos.includes('<b>已过期</b> 10.0%'),'basis shares from row weights');
+ assert(pos.includes('<td>2030-01-02</td><td>每日净值或收盘价</td>')&&pos.includes('<td>—</td><td>按对账单</td>')&&pos.includes('class="fin-pos-stale"'),'price date and basis per row');
+ assert(pos.indexOf('示例基金')<pos.indexOf('示例私募')&&pos.indexOf('示例私募')<pos.indexOf('示例旧价'),'export order kept');
+ assert(v.includes('<b>未建立监控</b> 示例私募 12.5%'),'uncovered with weight');
+ let f=view({positions:true}),fp=f.slice(f.indexOf('data-fin-panel="positions"'),f.indexOf('</figure>',f.indexOf('data-fin-panel="positions"')));assert(!/示例基金|60\.0%|2030-01-02/.test(fp),'folded positions render nothing');
+ let s=view({'s-holdings':true});assert(!s.includes('示例基金'),'folded holdings section hides positions');
+ vm.runInContext('financeFolded={}',ctx);console.log('Finance positions passed');
+}

@@ -8,7 +8,7 @@ network connections and never start processes; tests enforce this with an AST ch
 Isolation: these records are served only by GET /api/external. They are not part
 of phd.records(), the generated dashboard/index files, or any Codex/agent prompt.
 """
-import datetime as dt, hashlib, hmac, json, os, secrets, stat, sys, threading, time
+import datetime as dt, hashlib, hmac, json, os, re, secrets, stat, sys, threading, time
 from pathlib import Path
 
 EXPORT_ROOT = Path(os.environ.get('DESK_EXPORT_ROOT') or Path.home() / 'Library/Application Support/PAICC/desk-export')
@@ -29,13 +29,13 @@ def _yaml():
     return yaml
 
 
-def _read_bytes(path):
+def _read_bytes(path, limit=MAX_FILE_BYTES):
     """Open without following symlinks, regular files only, bounded size."""
     fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode): raise ValueError('not a regular file')
-        if info.st_size > MAX_FILE_BYTES: raise ValueError('file too large')
+        if info.st_size > limit: raise ValueError('file too large')
         chunks = []
         while True:
             chunk = os.read(fd, 65536)
@@ -131,7 +131,46 @@ def load_source(key, root=None):
             read_only=True, demo=is_demo(meta), link=safe_link(meta.get('link')),
             body=body, file=rel))
     if skipped: result['warnings'].append(f'{skipped} file(s) could not be read and were skipped.')
+    if key == 'fic': result['run'] = load_run(root)
     return result
+
+
+# FIC run batches (FD-071). current_run.json points at one immutable batch, runs/<run_id>.json,
+# and carries its sha256. Desk shows a batch only if the bytes it read hash to that value, so one
+# page never mixes two runs. The last verified batch is kept in memory (never on disk) and shown,
+# labelled, when a later pointer fails to verify.
+MAX_RUN_BYTES = 8 * 1024 * 1024
+RUN_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,95}')
+_last_run = {}
+
+
+def load_run(root=None):
+    folder = Path(root or EXPORT_ROOT) / 'fic'
+    pointer_path = folder / 'current_run.json'
+    if not pointer_path.exists() and not pointer_path.is_symlink(): return None
+    cache_key = str(folder)
+    pointer = {}
+    try:
+        raw_pointer = json.loads(_read_bytes(pointer_path).decode('utf-8'))
+        if not isinstance(raw_pointer, dict): raise ValueError('pointer is not an object')
+        pointer = {k: raw_pointer.get(k) for k in ('run_id', 'status', 'trigger', 'published_at', 'file') if isinstance(raw_pointer.get(k), str)}
+        run_id, expected = pointer.get('run_id', ''), str(raw_pointer.get('sha256') or '').lower()
+        if not RUN_ID.fullmatch(run_id): raise ValueError('invalid run_id in pointer')
+        if pointer.get('file') not in (None, f'runs/{run_id}.json'): raise ValueError('pointer file does not match run_id')
+        if not re.fullmatch(r'[0-9a-f]{64}', expected): raise ValueError('pointer has no valid sha256')
+        runs = folder / 'runs'
+        if runs.is_symlink() or not runs.is_dir(): raise ValueError('runs folder missing or a symlink')
+        data = _read_bytes(runs / f'{run_id}.json', MAX_RUN_BYTES)
+        actual = hashlib.sha256(data).hexdigest()
+        if not hmac.compare_digest(actual, expected): raise ValueError('sha256 does not match the pointer')
+        batch = json.loads(data.decode('utf-8'))
+        if not isinstance(batch, dict) or not isinstance(batch.get('run'), dict): raise ValueError('batch has no run section')
+        if batch['run'].get('run_id') != run_id: raise ValueError('batch run_id does not match the pointer')
+        result = {'ok': True, 'pointer': pointer, 'sha256': actual, 'batch': _plain(batch)}
+        _last_run[cache_key] = result
+        return result
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        return {'ok': False, 'error': str(exc), 'pointer': pointer, 'last_good': _last_run.get(cache_key)}
 
 
 def snapshot(root=None):

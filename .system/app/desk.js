@@ -247,33 +247,45 @@ const FIN_STRESS={'rates_+100bp':'利率 +100bp','global_equity_-20':'全球股�
 const finTag=(map,v)=>`<span class="fin-status fin-status-${map[v]||'ok'}">${E(v||'—')}</span>`;
 const finEvidence=v=>E(FIN_EVIDENCE[v]||v||'—');
 function finProposalStatus(st){return st==='条件性方案'?`<span class="fin-unset fin-conditional">条件性方案 · 尚未批准</span>`:finTag(FIN_PROPOSAL,st)}
+// While any investment-policy field is missing, every estimated amount carries this label (FD-070).
+let finCondMissing=false;
+const finCond=()=>finCondMissing?' <span class="tiny-label fin-cond">条件性测算</span>':'';
+function finAlternatives(x,base){
+ let alts=Array.isArray(x.alternatives)?x.alternatives:[];if(!alts.length)return '';
+ let st=a=>(a.after&&a.after.stress_pct||{});
+ return `<h5>不同幅度对比</h5><div class="reading-table"><table><thead><tr><th>幅度</th><th>金额 ${E(base)}${finCond()}</th><th>最大单一持仓</th>${Object.keys(FIN_STRESS).map(k=>`<th>压力 · ${E(FIN_STRESS[k])}</th>`).join('')}</tr></thead><tbody>${alts.map(a=>`<tr><td>${String(a.scale)==='0'?'不交易':E(a.scale)+' 倍'}</td><td>${finNum(a.amount)}</td><td>${finPct(a.after&&a.after.top1_pct)}</td>${Object.keys(FIN_STRESS).map(k=>`<td>${finPct(st(a)[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
 function finActions(cd){
- let p=cd&&cd.proposals,list=Array.isArray(p?.proposals)?p.proposals.slice(0,3):[];if(!list.length)return '';
+ let p=cd&&cd.proposals,all=Array.isArray(p?.proposals)?p.proposals:[];if(!all.length)return '';
+ let live=all.filter(x=>x.status!=='已撤销'),gone=all.filter(x=>x.status==='已撤销'),list=live.slice(0,3),base=p.base||cd.base||'';
  let line=(l,v)=>v?`<p><b>${E(l)}</b> ${E(v)}</p>`:'';
  let items=list.map((x,i)=>{let moves=Array.isArray(x.resolved_moves)?x.resolved_moves:[];
-  return `<li class="fin-action"><div class="fin-action-head"><span class="fin-action-rank">${i+1}</span><b>${E(x.title||'')}</b>${finProposalStatus(x.status)}${x.confidence?`<span class="tiny-label">信心 ${E(x.confidence)}</span>`:''}</div>
+  return `<li class="fin-action" data-proposal="${E(x.id||'')}"><div class="fin-action-head"><span class="fin-action-rank">${i+1}</span><b>${E(x.title||'')}</b>${finProposalStatus(x.status)}${x.feasible===true?'<span class="tiny-label">可行</span>':x.feasible===false?'<span class="fin-status fin-status-review">不可行</span>':''}${x.confidence?`<span class="tiny-label">信心 ${E(x.confidence)}</span>`:''}</div>
+  ${x.feasible===false&&x.blocked_reason?`<p><b>不可行原因</b> ${E(x.blocked_reason)}</p>`:''}
   ${x.status==='条件性方案'&&Array.isArray(x.assumptions)&&x.assumptions.length?`<div class="fin-assume"><b>前提假设（全部成立才适用）</b><ul>${x.assumptions.map(a=>`<li>${E(a)}</li>`).join('')}</ul></div>`:''}
-  ${line('为什么是现在',x.why_now)}${line('为什么是这个规模',x.why_size)}${line('最强反对意见',x.strongest_objection)}${line('撤销条件',x.revoke_if)}${line('依据',x.evidence)}
-  ${moves.length?`<div class="reading-table"><table><thead><tr><th>来源</th><th>去向</th><th>金额 ${E(p.base||cd.base||'')}</th><th>每年收益差</th></tr></thead><tbody>${moves.map(m=>`<tr><td>${E(m.from||'—')}</td><td>${E(m.to_name||'—')}${m.to_group?` <span class="tiny-label">${E(FIN_GROUP[m.to_group]||m.to_group)}</span>`:''}</td><td>${finNum(m.amount)}</td><td>${m.carry_per_year==null?'—':finSigned(m.carry_per_year)}</td></tr>`).join('')}</tbody></table></div>`:''}</li>`}).join('');
- return finCard('今天最值得考虑的三项行动','Top actions today',`${p.as_of?`<p class="tiny-label">判断日期 ${E(p.as_of)}</p>`:''}<ol class="fin-actions">${items}</ol>${p.note?`<p class="fin-note">${E(p.note)}</p>`:''}`,'actions');
+  ${line('为什么是现在',x.why_now)}${line('为什么是这个规模',x.why_size)}${line('规模依据',x.size_basis)}${line('最强反对意见',x.strongest_objection)}${line('撤销条件',x.revoke_if)}${line('依据',x.evidence)}
+  ${moves.length?`<div class="reading-table"><table><thead><tr><th>来源</th><th>去向</th><th>金额 ${E(base)}${finCond()}</th><th>每年收益差</th></tr></thead><tbody>${moves.map(m=>`<tr><td>${E(m.from||'—')}</td><td>${E(m.to_name||'—')}${m.to_group?` <span class="tiny-label">${E(FIN_GROUP[m.to_group]||m.to_group)}</span>`:''}</td><td>${finNum(m.amount)}</td><td>${m.carry_per_year==null?'—':finSigned(m.carry_per_year)}</td></tr>`).join('')}</tbody></table></div>`:''}${finAlternatives(x,base)}</li>`}).join('');
+ let withdrawn=gone.length?`<h5>已撤销</h5><ul class="fin-withdrawn">${gone.map(x=>`<li data-proposal="${E(x.id||'')}"><b>${E(x.title||'')}</b> ${finTag(FIN_PROPOSAL,x.status)}${x.withdrawn?`<p>${E(x.withdrawn)}</p>`:''}</li>`).join('')}</ul>`:'';
+ return finCard('今天最值得考虑的三项行动','Top actions today',`${p.as_of?`<p class="tiny-label">判断日期 ${E(p.as_of)}</p>`:''}${items?`<ol class="fin-actions">${items}</ol>`:'<p class="tiny-label">没有待考虑的方案</p>'}${p.note?`<p class="fin-note">${E(p.note)}</p>`:''}${withdrawn}`,'actions');
 }
 function finCash(cd){
- let c=cd&&cd.review&&cd.review.cash;if(!c||typeof c!=='object')return '';
+ let c=cd&&cd.review&&cd.review.cash,liq=finLiquidity(cd&&cd.liquidity);if((!c||typeof c!=='object')&&!liq)return '';c=c&&typeof c==='object'?c:{};
  let sc=Array.isArray(c.scenarios)?c.scenarios:[],opts=Array.isArray(c.options)?c.options:[];
  let names=[...new Set(sc.flatMap(s=>(s.extra_per_year||[]).map(e=>e.option)))];
- let grid=sc.length&&names.length?`<div class="reading-table"><table><thead><tr><th>可选去处</th><th>年化</th>${sc.map(s=>`<th>备用金 ${finNum(s.reserve)}<div class="tiny-label">可调动 ${finNum(s.movable)}${s.movable_pct!=null?` · ${finPct(s.movable_pct)}`:''}</div></th>`).join('')}</tr></thead><tbody>${names.map(n=>{let e0=sc.map(s=>(s.extra_per_year||[]).find(e=>e.option===n));let rate=e0.find(e=>e&&e.rate_pct!=null);return `<tr><td>${E(n)}</td><td>${rate?finPct(rate.rate_pct):'—'}</td>${e0.map(e=>`<td>${e&&e.extra!=null?finSigned(e.extra):'—'}</td>`).join('')}</tr>`}).join('')}</tbody></table></div><p class="tiny-label">表中数字为每年比现状多出的收益（${E(cd.base||'')}）</p>`:'';
+ let grid=sc.length&&names.length?`<div class="reading-table"><table><thead><tr><th>可选去处</th><th>年化</th>${sc.map(s=>`<th>备用金 ${finNum(s.reserve)}<div class="tiny-label">可调动 ${finNum(s.movable)}${s.movable_pct!=null?` · ${finPct(s.movable_pct)}`:''}</div></th>`).join('')}</tr></thead><tbody>${names.map(n=>{let e0=sc.map(s=>(s.extra_per_year||[]).find(e=>e.option===n));let rate=e0.find(e=>e&&e.rate_pct!=null);return `<tr><td>${E(n)}</td><td>${rate?finPct(rate.rate_pct):'—'}</td>${e0.map(e=>`<td>${e&&e.extra!=null?finSigned(e.extra):'—'}</td>`).join('')}</tr>`}).join('')}</tbody></table></div><p class="tiny-label">表中数字为每年比现状多出的收益（${E(cd.base||'')}）${finCond()}</p>`:'';
  let optTable=opts.length?`<details class="fin-table"><summary>去处说明（${opts.length} 项）</summary><div class="reading-table"><table><thead><tr><th>名称</th><th>利率</th><th>保本</th><th>流动性</th><th>来源</th><th>日期</th></tr></thead><tbody>${opts.map(o=>`<tr><td>${E(o.name)}${o.is_current?' <span class="tiny-label">（现状）</span>':''}</td><td>${E(o.rate??'—')}</td><td>${o.guaranteed===true?'是':o.guaranteed===false?'否':'—'}</td><td>${E(o.liquidity||'—')}</td><td>${E(o.source||'—')}</td><td>${E(o.as_of||'—')}</td></tr>`).join('')}</tbody></table></div></details>`:'';
- let head=`<p class="fin-cash-head"><span class="tiny-label">银行现金</span> <b>${finNum(c.bank_cash)}</b> ${E(cd.base||'')}${c.bank_cash_pct!=null?` <span class="tiny-label">占总资产 ${finPct(c.bank_cash_pct)}</span>`:''}</p>`;
- return finCard('现金管理建议','Cash management',head+(c.note?`<p class="fin-note">${E(c.note)}</p>`:'')+grid+optTable,'cash');
+ let head=c.bank_cash!=null?`<p class="fin-cash-head"><span class="tiny-label">银行现金</span> <b>${finNum(c.bank_cash)}</b> ${E(cd.base||'')}${c.bank_cash_pct!=null?` <span class="tiny-label">占总资产 ${finPct(c.bank_cash_pct)}</span>`:''}</p>`:'';
+ return finCard('现金管理建议','Cash management',head+(c.note?`<p class="fin-note">${E(c.note)}</p>`:'')+grid+optTable+liq,'cash');
 }
 function finCompare(before,after){
  if(!before||!after)return '';let keys=[...new Set([...Object.keys(before.groups_pct||{}),...Object.keys(after.groups_pct||{})])];
  let row=(l,a,b)=>`<tr><td>${E(l)}</td><td>${finPct(a)}</td><td>${finPct(b)}</td></tr>`;
- return `<h5>调整前后对比</h5><div class="reading-table"><table><thead><tr><th>项目</th><th>现在</th><th>全部执行后</th></tr></thead><tbody>${keys.map(k=>row(FIN_GROUP[k]||k,(before.groups_pct||{})[k],(after.groups_pct||{})[k])).join('')}${row('最大单一持仓',before.top1_pct,after.top1_pct)}${row('两天内可取用',before.within_2_days_pct,after.within_2_days_pct)}${Object.keys(FIN_STRESS).filter(k=>(before.stress_pct||{})[k]!=null||(after.stress_pct||{})[k]!=null).map(k=>row('压力测试 · '+FIN_STRESS[k],(before.stress_pct||{})[k],(after.stress_pct||{})[k])).join('')}</tbody></table></div>`;
+ // "两天内可取用" is left out on purpose: FIC replaced it with chart_data.liquidity (shown under cash).
+ return `<h5>调整前后对比</h5><div class="reading-table"><table><thead><tr><th>项目</th><th>现在</th><th>全部执行后</th></tr></thead><tbody>${keys.map(k=>row(FIN_GROUP[k]||k,(before.groups_pct||{})[k],(after.groups_pct||{})[k])).join('')}${row('最大单一持仓',before.top1_pct,after.top1_pct)}${Object.keys(FIN_STRESS).filter(k=>(before.stress_pct||{})[k]!=null||(after.stress_pct||{})[k]!=null).map(k=>row('压力测试 · '+FIN_STRESS[k],(before.stress_pct||{})[k],(after.stress_pct||{})[k])).join('')}</tbody></table></div>`;
 }
 function finAdjust(cd){
  let t=cd&&cd.position_table,rows=Array.isArray(t?.rows)?t.rows:[];if(!rows.length)return '';
- let head=`<tr><th>名称</th><th>当前占比</th><th>建议目标占比</th><th>调整金额</th><th>调整理由</th><th>资金去向</th><th>数据可信度</th><th>状态</th><th>需要批准</th></tr>`;
+ let head=`<tr><th>名称</th><th>当前占比</th><th>建议目标占比</th><th>调整金额${finCond()}</th><th>调整理由</th><th>资金去向</th><th>数据可信度</th><th>状态</th><th>需要批准</th></tr>`;
  let tr=r=>`<tr><td>${E(r.name)}</td><td>${finPct(r.current_pct)}</td><td>${finPct(r.target_pct)}</td><td>${Number(r.change_amount)?finSigned(r.change_amount):'0'}</td><td class="fin-wrap">${E(r.reason||'—')}</td><td>${E(r.destination||'—')}</td><td>${finEvidence(r.evidence)}</td><td>${r.status==='条件性方案'?finProposalStatus(r.status):E(r.status||'—')}</td><td>${r.needs_approval?'<b>需要</b>':'不需要'}</td></tr>`;
  let main=rows.filter(r=>r.needs_approval),rest=rows.filter(r=>!r.needs_approval),dest=Array.isArray(t.destinations)?t.destinations:[];
  let destRows=dest.map(d=>`<tr class="fin-adj-dest"><td>${E(d.name)} <span class="tiny-label">新增去向</span></td><td>${finPct(d.current_pct)}</td><td>${finPct(d.target_pct)}</td><td>${finSigned(d.change_amount)}</td><td colspan="5"></td></tr>`).join('');
@@ -298,6 +310,38 @@ function finReview(cd){
  let line=(l,v)=>v?`<p><b>${E(l)}</b> ${E(v)}</p>`:'';
  let list=rows.map(x=>`<details class="fin-ctl-card fin-rev-row"><summary><span class="fin-ctl-head"><b>${E(x.name)}</b>${x.symbol?`<span class="tiny-label">${E(x.symbol)}</span>`:''}${finTag(FIN_LEANING,x.leaning)}<span class="tiny-label">${finPct(x.weight_pct)} · ${E(x.account||'')} · 证据 ${finEvidence(x.evidence)} · 判断 ${E(x.judged_on||'—')}${x.changed_today?' · 今天变更':''}</span></span></summary><div class="fin-ctl-body">${line('论点',x.thesis)}${line('支持',x.for)}${line('反对',x.against)}${line('触发条件',x.trigger)}${line('信心',x.confidence)}<p class="tiny-label">价值 ${finNum(x.value)} ${E(cd.base||'')} · 价格日期 ${E(x.price_date||'—')} · ${E(FIN_BASIS[x.basis]||x.basis||'—')}${x.changed_on?` · 上次变更 ${E(x.changed_on)}`:''}</p></div></details>`).join('');
  return finCard('全部持仓操作意见','Every position',head+chips+`<details class="fin-table fin-rev-all"><summary>展开全部 ${rows.length} 条</summary><div class="fin-ctl-list">${list}</div></details>`,'review');
+}
+// FIC run batch (FD-070/071): which run this page shows, whether it is today's, and whether it verified.
+const FIN_RUN_STATUS={COMPLETE:['完整','ok'],DEGRADED:['降级：部分数据有问题','warn'],FAILED:['失败','review']};
+const FIN_TRIGGER={manual:'手动',scheduled:'自动'};
+function finRunBatch(fic){let r=fic&&fic.run;if(!r)return null;let use=r.ok?r:r.last_good;return {info:r,batch:use?use.batch:null,shown:use||null}}
+function finRun(rb,manifest){
+ if(!rb)return '';let {info,shown}=rb,run=shown?.batch?.run||{},f=run.facts||{},today=typeof localDate==='function'?localDate(new Date()):'';
+ let fail=info.ok?'':`<div class="fin-run-fail" role="alert"><b>批次校验失败</b> ${E(info.error||'')}${info.pointer?.run_id?` · 指针指向 ${E(info.pointer.run_id)}`:''}<br>${shown?`下面显示的是上一次校验成功的批次 <b>${E(shown.pointer?.run_id||'')}</b>`:'没有可以显示的已校验批次，三项行动、现金、仓位调整表和全部持仓意见暂不显示'}</div>`;
+ if(!shown)return finCard('本次运行','Run',fail,'run');
+ let [zh,cls]=FIN_RUN_STATUS[run.status]||[String(run.status||'—'),'warn'];
+ let runDay=String(run.run_date||'').slice(0,10),notToday=today&&runDay&&runDay!==today;
+ let res=f.research||{},pol=f.policy||{},comp=f.computation||{},data=f.data||{};
+ let kv=(l,v)=>`<span><span class="tiny-label">${E(l)}</span> <b>${v}</b></span>`;
+ let facts=`<div class="fin-run-facts">${kv('判断时间',E(run.run_date||'—'))}${kv('账户数据',E(run.account_as_of||'—'))}${kv('行情',E(run.market_as_of||'—'))}${kv('研究',E(run.research_as_of||'—'))}${res.holdings!=null?kv('今天重判',`${E(res.refreshed_today??'—')} / ${E(res.holdings)} 条`):''}${res.insufficient_evidence!=null?kv('证据不足',E(res.insufficient_evidence)+' 条'):''}${res.action_without_evidence?kv('无证据却有操作',E(res.action_without_evidence)+' 条'):''}${data.stale_prices!=null?kv('过期价格',E(data.stale_prices)+' 条'):''}</div>`;
+ let reasons=[...(Array.isArray(pol.pending_fields)&&pol.pending_fields.length?[`投资政策待确认：${pol.pending_fields.map(E).join('、')}`]:[]),...(Array.isArray(comp.infeasible_proposals)&&comp.infeasible_proposals.length?[`不可行的方案：${comp.infeasible_proposals.map(E).join('、')}`]:[])];
+ let approv=pol.approvable==null?'':`<p class="fin-run-approve"><b>方案能否审批</b> ${pol.approvable?'可以审批':'<span class="fin-status fin-status-warn">暂不能审批</span>'}${reasons.length?`<span class="tiny-label">${reasons.join('；')}</span>`:''}</p>`;
+ let list=(l,a)=>Array.isArray(a)&&a.length?`<div class="fin-run-list"><b>${E(l)}</b><ul>${a.map(x=>`<li>${E(x)}</li>`).join('')}</ul></div>`:'';
+ let head=`<div class="fin-run-head"><span class="fin-status fin-status-${cls}">${E(zh)}</span><b class="fin-run-id">${E(run.run_id||'')}</b><span class="tiny-label">${E(FIN_TRIGGER[run.trigger]||run.trigger||'—')}运行</span></div>`;
+ let todayNote=notToday?`<p class="fin-run-stale"><b>今天没有运行</b> · 下面是 ${E(runDay)} 的结果</p>`:'';
+ let proof=`<p class="tiny-label fin-run-proof">Desk 读到的批次：${E(shown.pointer?.run_id||'')} · sha256 ${E(String(shown.sha256||'').slice(0,8))}${shown.pointer?.published_at?` · 发布于 ${E(shown.pointer.published_at)}`:''}${manifest?.exported_at?` · 导出清单时间 ${E(manifest.exported_at)}`:''}</p>`;
+ return finCard('本次运行','Run',fail+head+todayNote+facts+approv+list('问题',run.problems)+list('阻断项',run.blocking)+proof,'run');
+}
+const FIN_LIQ={same_day:'当天',t1:'T+1',t2:'T+2',t3_to_t7:'T+3 至 T+7',locked:'锁定期内',unknown:'不明'};
+function finLiquidity(l){
+ if(!l||typeof l!=='object')return '';let n=l.normal_pct||{};
+ return `<h5>流动性${l.as_of?` <span class="tiny-label">${E(l.as_of)}</span>`:''}</h5><div class="fin-basis-summary">${l.within_2_days_normal_pct!=null?`<span><b>正常情况两天内可取用</b> ${finPct(l.within_2_days_normal_pct)}</span>`:''}${l.stress_same_day_pct!=null?`<span><b>压力情况下当天可取用</b> ${finPct(l.stress_same_day_pct)}</span>`:''}</div><div class="reading-table"><table><thead><tr>${Object.keys(FIN_LIQ).map(k=>`<th>${FIN_LIQ[k]}</th>`).join('')}</tr></thead><tbody><tr>${Object.keys(FIN_LIQ).map(k=>`<td>${finPct(n[k])}</td>`).join('')}</tr></tbody></table></div>${l.denominator?`<p class="tiny-label">口径：${E(l.denominator)}</p>`:''}${l.note?`<p class="fin-note">${E(l.note)}</p>`:''}`;
+}
+const FIN_POLICY={missing:['缺失','review'],assumed:['假设','warn']};
+function finPolicy(p){
+ let fields=p&&p.fields&&typeof p.fields==='object'?Object.entries(p.fields).filter(([,v])=>v&&FIN_POLICY[v.status]):[];if(!p||(!fields.length&&!p.note))return '';
+ let body=fields.length?`<div class="reading-table"><table><thead><tr><th>项目</th><th>状态</th><th>当前取值</th><th>来源 / 说明</th></tr></thead><tbody>${fields.sort((a,b)=>(a[1].status==='missing'?0:1)-(b[1].status==='missing'?0:1)).map(([k,v])=>`<tr><td>${E(k)}</td><td>${finBadge(FIN_POLICY,v.status)}</td><td>${v.value==null||v.value===''?'—':E(typeof v.value==='object'?JSON.stringify(v.value):v.value)}</td><td>${E([v.source,v.note].filter(Boolean).join(' · ')||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="tiny-label">所有项目都已确认</p>';
+ return finCard('投资政策：尚未确认的项','Policy not yet confirmed',`${p.version?`<p class="tiny-label">版本 ${E(p.version)}</p>`:''}${body}${p.note?`<p class="fin-note">${E(p.note)}</p>`:''}`,'policy');
 }
 function financeCharts(cd){
  if(!cd||typeof cd!=='object')return '';let base=String(cd.base||'');
@@ -329,8 +373,12 @@ function financeView(){
  if(!fin.length)return h.replace('__FIN_FOLD_ALL__','全部收起 Collapse all')+'<div class="quiet-empty">No finance exports yet.</div>';
  let daily=fin.filter(r=>externalKind(r)==='finance_daily').sort(externalSort('finance_daily')),alerts=fin.filter(r=>externalKind(r)==='finance_alert').sort(externalSort('finance_alert')),learning=fin.filter(r=>externalKind(r)==='learning').sort(externalSort('learning')),reviews=fin.filter(r=>externalKind(r)==='finance_review').sort((a,b)=>String(b.date||b.updated_at||'').localeCompare(String(a.date||a.updated_at||''))),latest=daily[0],review=reviews[0],holdings=fin.filter(r=>externalKind(r)==='finance_holdings').sort(externalSort('finance_holdings'))[0];
  let section=(id,label,zh,body)=>{let f=finFolded('s-'+id);return `<section class="section external-section${f?' is-folded':''}" id="finance-${id}" data-fin-panel="s-${id}"><div class="section-head"><h2>${E(zh)} <span class="external-zh">${E(label)}</span></h2>${finFoldButton('s-'+id,zh)}</div>${f?'':body}</section>`};
- let hc=holdings&&holdings.chart_data,top=holdings?finDecision(hc)+finActions(hc)+finCash(hc)+finAdjust(hc)+finTrust(hc)+finTrend(hc)+finGoal(hc)+finControl(hc):'';if(top)h+=`<div class="fin-charts fin-trend">${top}</div>`;
- h+=section('holdings','Holdings','持仓',holdings?`<article class="external-item finance-report">${externalItem({...holdings,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${finReview(holdings.chart_data)}${finPositions(holdings.chart_data)}${financeCharts(holdings.chart_data)}${holdings.chart_data?`<details class="external-body"><summary>持仓明细 Details</summary><div class="external-markdown">${externalMarkdown(holdings.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(holdings.body)}</div>`}</article>`:'<div class="quiet-empty">No holdings exported yet</div>');
+ let rb=finRunBatch(fic),hc=holdings&&holdings.chart_data;
+ // With a run pointer, the batch-backed blocks read only the verified batch (never holdings), so a page never mixes two runs.
+ let bc=rb?{...(hc||{}),...Object.fromEntries(['proposals','position_table','review','liquidity','policy'].map(k=>[k,rb.batch?rb.batch[k]:undefined]))}:hc;
+ finCondMissing=!!(bc&&bc.policy&&bc.policy.fields&&Object.values(bc.policy.fields).some(v=>v&&v.status==='missing'));
+ let top=finRun(rb,fic.manifest)+(holdings||rb?finDecision(hc)+finActions(bc)+finCash(bc)+finAdjust(bc)+finTrust(bc)+finPolicy(bc&&bc.policy)+finTrend(hc)+finGoal(hc)+finControl(hc):'');if(top)h+=`<div class="fin-charts fin-trend">${top}</div>`;
+ h+=section('holdings','Holdings','持仓',holdings?`<article class="external-item finance-report">${externalItem({...holdings,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${finReview(bc)}${finPositions(holdings.chart_data)}${financeCharts(holdings.chart_data)}${holdings.chart_data?`<details class="external-body"><summary>持仓明细 Details</summary><div class="external-markdown">${externalMarkdown(holdings.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(holdings.body)}</div>`}</article>`:'<div class="quiet-empty">No holdings exported yet</div>');
  h+=section('alerts','Alerts','提醒',`<div class="external-list">${alerts.map(r=>externalItem(r)).join('')||'<div class="quiet-empty">No alerts</div>'}</div>`);
  h+=section('review','Daily review','每日复盘',review?`<article class="external-item finance-report">${externalItem({...review,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeViews(review.views)}${financeFollowups(review.followups)}${review.views||review.followups?`<details class="external-body"><summary>复盘全文 Full review</summary><div class="external-markdown">${externalMarkdown(review.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(review.body)}</div>`}</article>${reviews.length>1?`<h4 class="external-sub">Earlier reviews</h4><div class="external-list">${reviews.slice(1,14).map(r=>externalItem(r)).join('')}</div>`:''}`:'<div class="quiet-empty">No review exported yet</div>');
  h+=section('latest','Latest daily report','最新金融日报',latest?`<article class="external-item finance-report${latest.demo?' is-demo':''}">${externalItem({...latest,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}<div class="external-markdown">${externalMarkdown(latest.body)}</div></article>`:'<div class="quiet-empty">No daily report yet</div>');

@@ -350,3 +350,44 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  delete cd.proposals;delete cd.position_table;delete cd.review;let g=view();assert(!['actions','cash','adjust','review'].some(k=>g.includes(`data-fin-panel="${k}"`)),'missing fields hide their blocks');
  vm.runInContext('financeFolded={}',ctx);console.log('Finance daily adjustment view passed');
 }
+
+// FD-070/071 run batch (fabricated): header, today check, batch-only sources, failure, policy, liquidity, withdrawn, alternatives.
+{
+ const today=ctx.localDate(new Date());
+ const snap={groups_pct:{cash_cny:'10.0'},top1_pct:'30.0',within_2_days_pct:'99.9',stress_pct:{combined_crisis:'-3.0'}};
+ const batch=(id,day)=>({run:{run_id:id,run_date:day+'T08:00:00+00:00',trigger:'manual',status:'DEGRADED',problems:['示例问题原文'],blocking:['示例阻断原文'],account_as_of:'2030-01-01',market_as_of:'2030-01-02',research_as_of:'2030-01-02',
+   facts:{research:{holdings:59,refreshed_today:12,insufficient_evidence:7,action_without_evidence:0},policy:{approvable:false,confirmed:false,pending_fields:['示例政策项']},computation:{infeasible_proposals:['示例不可行']},data:{stale_prices:2}}},
+  proposals:{as_of:'2030-01-02',base:'CNY',before:snap,after_all:snap,proposals:[
+   {id:'cash-x',title:'示例撤销方案',status:'已撤销',withdrawn:'示例撤销原因',resolved_moves:[]},
+   {id:'demo-cond-x',title:'示例批次方案',status:'条件性方案',feasible:true,blocked_reason:null,assumptions:['示例假设'],size_basis:'示例规模依据原文',resolved_moves:[{from:'甲',to_name:'乙',amount:'100'}],
+    alternatives:[{scale:'0',amount:'0',after:snap},{scale:'0.5',amount:'50',after:snap}]}]},
+  position_table:{rows:[{key:'r',name:'示例批次行',current_pct:'1',target_pct:'1',change_amount:'0',needs_approval:true,status:'条件性方案'}],before:snap,after_all:snap},
+  review:{as_of:'2030-01-02',rows:[{key:'r',name:'示例基金复核行',symbol:'X0001',leaning:'替换候选',judged_on:'2030-01-02',evidence:'third_party',weight_pct:'1'}]},
+  liquidity:{as_of:'2030-01-02',denominator:'示例口径',normal_pct:{same_day:'10',t1:'20',t2:'30',t3_to_t7:'10',locked:'25',unknown:'5'},within_2_days_normal_pct:'60.0',stress_same_day_pct:'5.0',note:'示例流动性说明原文'},
+  policy:{version:'v0',note:'示例政策说明原文',fields:{max_single:{status:'missing',value:null},reserve:{status:'assumed',value:'3个月',source:'示例来源'},horizon:{status:'confirmed',value:'5年'}}}});
+ const hold={base:'CNY',by_category:[],proposals:{proposals:[{id:'old',title:'旧持仓方案',status:'待你批准',resolved_moves:[]}]},review:{rows:[{key:'o',name:'旧持仓复核行',leaning:'保留'}]}};
+ const view=(run,manifest={exported_at:'2030-01-02T09:00:00+00:00'})=>{vm.runInContext('financeFolded={}',ctx);ctx.externalData={export_root:'/tmp/x',finance_locked:false,sources:[{source:'fic',label:'FIC',exists:true,warnings:[],manifest,run,records:[{source:'fic',source_label:'FIC',read_only:true,demo:false,source_id:'h',kind:'finance_holdings',title:'持仓',date:'2030-01-02',chart_data:hold,body:'x'}]}]};return ctx.financeView()};
+ const ok=(id,day)=>({ok:true,sha256:'abcdef0123456789'+'0'.repeat(48),pointer:{run_id:id,published_at:'2030-01-02T08:30:00+00:00'},batch:batch(id,day)});
+ const panel=(v,id)=>v.slice(v.indexOf(`data-fin-panel="${id}"`),v.indexOf('</figure>',v.indexOf(`data-fin-panel="${id}"`)));
+ let v=view(ok('2030-01-02-aaaa',today)),r=panel(v,'run');
+ assert(v.indexOf('data-fin-panel="run"')<v.indexOf('data-fin-panel="actions"'),'run header first');
+ assert(r.includes('2030-01-02-aaaa')&&r.includes('手动运行')&&r.includes('降级')&&!/今日更新|正常/.test(r),'run id, manual, degraded never shown as normal');
+ assert(r.includes('12 / 59 条')&&r.includes('证据不足')&&r.includes('暂不能审批')&&r.includes('示例政策项')&&r.includes('示例不可行'),'research facts and approvability with reasons');
+ assert(r.includes('<li>示例问题原文</li>')&&r.includes('<li>示例阻断原文</li>')&&r.includes('sha256 abcdef01')&&r.includes('导出清单时间 2030-01-02T09:00:00+00:00'),'problems, blocking and batch proof');
+ assert(!r.includes('今天没有运行'),'today run not flagged');
+ assert(v.includes('示例批次方案')&&v.includes('示例基金复核行')&&!v.includes('旧持仓方案')&&!v.includes('旧持仓复核行'),'batch-backed blocks read the batch only');
+ let a=panel(v,'actions');
+ assert(a.indexOf('示例批次方案')<a.indexOf('已撤销')&&a.includes('示例撤销原因')&&!a.slice(0,a.indexOf('<h5>已撤销')).includes('示例撤销方案'),'withdrawn kept out of the top actions');
+ assert(a.includes('可行')&&a.includes('示例规模依据原文')&&a.includes('不交易')&&a.includes('0.5 倍'),'feasible, size basis and size comparison');
+ assert(a.includes('条件性测算')&&panel(v,'adjust').includes('条件性测算'),'missing policy marks amounts as conditional');
+ let c=panel(v,'cash');assert(c.includes('正常情况两天内可取用</b> 60.0%')&&c.includes('示例流动性说明原文')&&c.includes('T+3 至 T+7'),'liquidity under cash');
+ assert(!panel(v,'adjust').includes('两天内可取用')&&!v.includes('99.9%'),'old two-day figure dropped');
+ let p=panel(v,'policy');assert(p.includes('投资政策：尚未确认的项')&&p.includes('max_single')&&p.includes('reserve')&&!p.includes('horizon')&&p.includes('示例政策说明原文'),'policy lists missing and assumed only');
+ let stale=panel(view(ok('2030-01-01-old','2000-01-01')),'run');assert(stale.includes('今天没有运行'),'old run flagged');
+ let fail=view({ok:false,error:'sha256 does not match the pointer',pointer:{run_id:'2030-01-03-bad'},last_good:ok('2030-01-02-aaaa',today)});
+ assert(panel(fail,'run').includes('批次校验失败')&&panel(fail,'run').includes('2030-01-03-bad')&&panel(fail,'run').includes('上一次校验成功的批次 <b>2030-01-02-aaaa')&&fail.includes('示例批次方案'),'failure keeps the last verified batch');
+ let none=view({ok:false,error:'x',pointer:{run_id:'b'},last_good:null});
+ assert(none.includes('批次校验失败')&&!none.includes('旧持仓方案')&&!none.includes('data-fin-panel="actions"'),'no verified batch: batch blocks hidden, holdings not used');
+ assert(!/<button(?![^>]*data-fin-fold)/.test(panel(v,'run')+panel(v,'policy')),'no action buttons');
+ console.log('Finance run batch passed');
+}

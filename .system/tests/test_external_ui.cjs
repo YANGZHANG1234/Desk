@@ -400,5 +400,12 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(pp.includes('政策版本 1')&&pp.includes('可活动资金 1%</b> 10')&&pp.includes('损失容忍 15%</b> 150')&&pp.includes('不是保证，也不是自动卖出线'),'policy numbers and fixed loss note');
  assert(pr.includes('可以审批')&&pr.includes('示例限制原文')&&!pr.includes('cash_needs_12m'),'limits shown verbatim, optional pending field not nagged');
  let top=pa.slice(0,pa.indexOf('<h5>去向未核实'));assert(!top.includes('示例研究候选')&&top.includes('示例已核验')&&top.includes('去向已核验')&&pa.includes('去向未核实，不可实施'),'research candidates kept out of top actions');
+ pn.batch.proposals.proposals[pn.batch.proposals.proposals.length-1]={id:'ok2',title:'示例已核验',status:'待你批准',feasible:true,destination_status:'已核验',assumptions:['示例待批假设'],resolved_moves:[{from:'甲',to_name:'乙',amount:'10'}]};
+ let lv=view(pn),la=panel(lv,'actions'),li=n=>la.split('<li class="fin-action"').find(x=>x.includes(`data-proposal="${n}"`))||'';
+ assert(li('ok2').includes('金额以办理当天的余额和利率为准')&&!li('ok2').includes('条件性测算')&&li('ok2').includes('<li>示例待批假设</li>'),'pending-approval proposal: own note, assumptions, no conditional label');
+ assert(li('demo-cond-x').includes('条件性测算'),'conditional proposal keeps its label');
+ assert(!panel(lv,'cash').includes('条件性测算')&&panel(lv,'cash').includes('示例流动性说明原文'),'cash scenarios carry only their own note');
+ assert(!panel(lv,'adjust').includes('调整金额 <span'),'no table-wide label when nothing required is pending');
+ pn.batch.run.facts.policy.required_pending=['示例必填项'];la=panel(view(pn),'actions');assert(li('ok2').includes('条件性测算'),'required pending field labels every estimate');
  console.log('Finance run batch passed');
 }

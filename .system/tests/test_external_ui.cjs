@@ -407,5 +407,10 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(!panel(lv,'cash').includes('条件性测算')&&panel(lv,'cash').includes('示例流动性说明原文'),'cash scenarios carry only their own note');
  assert(!panel(lv,'adjust').includes('调整金额 <span'),'no table-wide label when nothing required is pending');
  pn.batch.run.facts.policy.required_pending=['示例必填项'];la=panel(view(pn),'actions');assert(li('ok2').includes('条件性测算'),'required pending field labels every estimate');
+ pn.batch.run.facts.policy.required_pending=[];let lastP=pn.batch.proposals.proposals[pn.batch.proposals.proposals.length-1];
+ Object.assign(lastP,{status:'条件性方案',approval_stage:'附条件、待核验',user_decision:'示例：暂缓批准原文',options_compared:[{option:'示例甲',placed:'1,000（示例文字）','by_goal_date':'约 2%','at_2027-11-16':'n/a 说明',note:'示例备注'}]});
+ la=panel(view(pn),'actions');let o=li('ok2');
+ assert(o.includes('条件性方案 · 尚未批准')&&o.includes('审批阶段：附条件、待核验')&&o.includes('<b>你的决定</b> 示例：暂缓批准原文'),'status and approval stage both shown, user decision verbatim');
+ assert(o.includes('方案对照')&&o.includes('<td class="">1,000（示例文字）</td>')&&o.includes('n/a 说明')&&o.includes('条件性测算'),'options compared shown as text; conditional label back');
  console.log('Finance run batch passed');
 }

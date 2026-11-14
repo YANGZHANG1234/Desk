@@ -343,6 +343,12 @@ function finPolicy(p){
  let body=fields.length?`<div class="reading-table"><table><thead><tr><th>项目</th><th>状态</th><th>当前取值</th><th>来源 / 说明</th></tr></thead><tbody>${fields.sort((a,b)=>(a[1].status==='missing'?0:1)-(b[1].status==='missing'?0:1)).map(([k,v])=>`<tr><td>${E(k)}</td><td>${finBadge(FIN_POLICY,v.status)}</td><td>${v.value==null||v.value===''?'—':E(typeof v.value==='object'?JSON.stringify(v.value):v.value)}</td><td>${E([v.source,v.note].filter(Boolean).join(' · ')||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="tiny-label">所有项目都已确认</p>';
  return finCard('投资政策：尚未确认的项','Policy not yet confirmed',`${p.version?`<p class="tiny-label">版本 ${E(p.version)}</p>`:''}${body}${p.note?`<p class="fin-note">${E(p.note)}</p>`:''}`,'policy');
 }
+// 今日结论 follows the run batch too (FD-072). An older batch without it says so; holdings are never used instead.
+function finBatchDecision(rb,hc){
+ if(!rb)return finDecision(hc);let b=rb.batch;if(!b)return '';
+ if(!('decision' in b)&&!('decisions_needed' in b))return finCard('今日结论','Today’s conclusion','<p class="tiny-label">该批次未包含结论</p>','decision');
+ return finDecision({decision:b.decision||null,decisions_needed:Array.isArray(b.decisions_needed)?b.decisions_needed:[]});
+}
 function financeCharts(cd){
  if(!cd||typeof cd!=='object')return '';let base=String(cd.base||'');
  let parts=[finDonut(cd)];
@@ -377,7 +383,7 @@ function financeView(){
  // With a run pointer, the batch-backed blocks read only the verified batch (never holdings), so a page never mixes two runs.
  let bc=rb?{...(hc||{}),...Object.fromEntries(['proposals','position_table','review','liquidity','policy'].map(k=>[k,rb.batch?rb.batch[k]:undefined]))}:hc;
  finCondMissing=!!(bc&&bc.policy&&bc.policy.fields&&Object.values(bc.policy.fields).some(v=>v&&v.status==='missing'));
- let top=finRun(rb,fic.manifest)+(holdings||rb?finDecision(hc)+finActions(bc)+finCash(bc)+finAdjust(bc)+finTrust(bc)+finPolicy(bc&&bc.policy)+finTrend(hc)+finGoal(hc)+finControl(hc):'');if(top)h+=`<div class="fin-charts fin-trend">${top}</div>`;
+ let top=finRun(rb,fic.manifest)+(holdings||rb?finBatchDecision(rb,hc)+finActions(bc)+finCash(bc)+finAdjust(bc)+finTrust(bc)+finPolicy(bc&&bc.policy)+finTrend(hc)+finGoal(hc)+finControl(hc):'');if(top)h+=`<div class="fin-charts fin-trend">${top}</div>`;
  h+=section('holdings','Holdings','持仓',holdings?`<article class="external-item finance-report">${externalItem({...holdings,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${finReview(bc)}${finPositions(holdings.chart_data)}${financeCharts(holdings.chart_data)}${holdings.chart_data?`<details class="external-body"><summary>持仓明细 Details</summary><div class="external-markdown">${externalMarkdown(holdings.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(holdings.body)}</div>`}</article>`:'<div class="quiet-empty">No holdings exported yet</div>');
  h+=section('alerts','Alerts','提醒',`<div class="external-list">${alerts.map(r=>externalItem(r)).join('')||'<div class="quiet-empty">No alerts</div>'}</div>`);
  h+=section('review','Daily review','每日复盘',review?`<article class="external-item finance-report">${externalItem({...review,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeViews(review.views)}${financeFollowups(review.followups)}${review.views||review.followups?`<details class="external-body"><summary>复盘全文 Full review</summary><div class="external-markdown">${externalMarkdown(review.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(review.body)}</div>`}</article>${reviews.length>1?`<h4 class="external-sub">Earlier reviews</h4><div class="external-list">${reviews.slice(1,14).map(r=>externalItem(r)).join('')}</div>`:''}`:'<div class="quiet-empty">No review exported yet</div>');

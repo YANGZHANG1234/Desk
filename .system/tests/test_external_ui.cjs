@@ -389,5 +389,9 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  let none=view({ok:false,error:'x',pointer:{run_id:'b'},last_good:null});
  assert(none.includes('批次校验失败')&&!none.includes('旧持仓方案')&&!none.includes('data-fin-panel="actions"'),'no verified batch: batch blocks hidden, holdings not used');
  assert(!/<button(?![^>]*data-fin-fold)/.test(panel(v,'run')+panel(v,'policy')),'no action buttons');
+ assert(!panel(v,'decision').includes('示例')&&panel(v,'decision').includes('该批次未包含结论'),'old batch without conclusion says so, no holdings fallback');
+ let wd=ok('2030-01-02-dddd',today);wd.batch.decision={status:'审查',reason:'示例批次结论',as_of:'2030-01-02'};wd.batch.decisions_needed=[{item:'示例批次决定'}];
+ let dv=panel(view(wd),'decision');assert(dv.includes('示例批次结论')&&dv.includes('示例批次决定')&&dv.includes('fin-status-review'),'conclusion read from the batch');
+ hold.decision={status:'维持',reason:'旧持仓结论'};assert(!view(ok('2030-01-02-aaaa',today)).includes('旧持仓结论')&&view(undefined).includes('旧持仓结论'),'holdings conclusion only without a run pointer');delete hold.decision;
  console.log('Finance run batch passed');
 }

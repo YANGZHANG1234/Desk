@@ -393,5 +393,12 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  let wd=ok('2030-01-02-dddd',today);wd.batch.decision={status:'审查',reason:'示例批次结论',as_of:'2030-01-02'};wd.batch.decisions_needed=[{item:'示例批次决定'}];
  let dv=panel(view(wd),'decision');assert(dv.includes('示例批次结论')&&dv.includes('示例批次决定')&&dv.includes('fin-status-review'),'conclusion read from the batch');
  hold.decision={status:'维持',reason:'旧持仓结论'};assert(!view(ok('2030-01-02-aaaa',today)).includes('旧持仓结论')&&view(undefined).includes('旧持仓结论'),'holdings conclusion only without a run pointer');delete hold.decision;
+ let pn=ok('2030-01-02-eeee',today);pn.batch.run.policy_numbers={policy_version:1,total:'1000',reserve_pct:'1',reserve_amount:'10',loss_budget_pct:'15',loss_budget_amount:'150'};
+ pn.batch.run.facts.policy={confirmed:true,pending_fields:['cash_needs_12m'],required_pending:[],approvable:true,limits:'示例限制原文：只限制需要锁定资金的方案'};
+ pn.batch.proposals.proposals.push({id:'rc',title:'示例研究候选',status:'待你批准',destination_status:'研究候选',resolved_moves:[]},{id:'ok2',title:'示例已核验',status:'待你批准',feasible:true,destination_status:'已核验',resolved_moves:[]});
+ let pv=view(pn),pp=panel(pv,'policy'),pr=panel(pv,'run'),pa=panel(pv,'actions');
+ assert(pp.includes('政策版本 1')&&pp.includes('可活动资金 1%</b> 10')&&pp.includes('损失容忍 15%</b> 150')&&pp.includes('不是保证，也不是自动卖出线'),'policy numbers and fixed loss note');
+ assert(pr.includes('可以审批')&&pr.includes('示例限制原文')&&!pr.includes('cash_needs_12m'),'limits shown verbatim, optional pending field not nagged');
+ let top=pa.slice(0,pa.indexOf('<h5>去向未核实'));assert(!top.includes('示例研究候选')&&top.includes('示例已核验')&&top.includes('去向已核验')&&pa.includes('去向未核实，不可实施'),'research candidates kept out of top actions');
  console.log('Finance run batch passed');
 }

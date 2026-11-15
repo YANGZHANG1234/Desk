@@ -343,7 +343,7 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(t.indexOf('示例调整行')<t.indexOf('维持原仓位（1 条）')&&t.indexOf('维持原仓位（1 条）')<t.indexOf('示例维持行'),'approval rows shown, the rest folded');
  assert(t.includes('新增去向')&&t.includes('−200')&&t.includes('官方文件')&&t.includes('<b>需要</b>')&&t.includes('示例调整表说明原文')&&t.includes('全部执行后')&&t.includes('综合危机'),'table columns, destinations, before/after and note');
  let r=panel(v,'trust');assert(r.includes('<b>按对账单</b> 30.0%')&&r.includes('无法独立核对')&&r.includes('<b>信息风险</b> 60.0%')&&r.includes('示例数据状态'),'reliability with information risk');
- let rv=panel(v,'review');assert(rv.includes('判断日期 2030-01-02')&&rv.includes('判断 2030-01-02')&&rv.includes('示例反对理由')&&rv.includes('第三方平台')&&rv.includes('今天变更'),'review shows judged dates and reasons');
+ let rv=panel(v,'review');assert(rv.includes('估值日 2030-01-02')&&rv.includes('判断 2030-01-02')&&rv.includes('示例反对理由')&&rv.includes('第三方平台')&&rv.includes('今天变更'),'review shows judged dates and reasons');
  assert(!/每日自动|自动更新|auto-?update/i.test(v),'no claim of automatic daily updates');
  for(const id of ['actions','cash','adjust','trust','review'])assert(!/<button(?![^>]*data-fin-fold)/.test(panel(v,id)),'no action buttons in '+id);
  let f=view({actions:true,cash:true,adjust:true,trust:true,review:true});for(const id of ['actions','cash','adjust','trust','review'])assert(!/示例|\d\.\d%/.test(panel(f,id).replace(/<figcaption>.*?<\/figcaption>/,'')),'folded '+id+' renders nothing');
@@ -412,5 +412,7 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  la=panel(view(pn),'actions');let o=li('ok2');
  assert(o.includes('条件性方案 · 尚未批准')&&o.includes('审批阶段：附条件、待核验')&&o.includes('<b>你的决定</b> 示例：暂缓批准原文'),'status and approval stage both shown, user decision verbatim');
  assert(o.includes('方案对照')&&o.includes('<td class="">1,000（示例文字）</td>')&&o.includes('n/a 说明')&&o.includes('条件性测算'),'options compared shown as text; conditional label back');
+ let rvw=panel(view(ok('2030-01-02-aaaa',today)),'review');assert(rvw.includes('估值日 2030-01-02 · 判断日 '+today)&&rvw.includes('由手动运行写入，每行注明判断日'),'valuation date, judgement date and manual writer');
+ let sch=ok('2030-01-02-aaaa',today);sch.batch.run.trigger='scheduled';assert(panel(view(sch),'review').includes('由自动运行写入，每行注明判断日'),'scheduled writer');
  console.log('Finance run batch passed');
 }

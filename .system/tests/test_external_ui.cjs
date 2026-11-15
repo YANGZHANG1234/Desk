@@ -414,5 +414,15 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(o.includes('方案对照')&&o.includes('<td class="">1,000（示例文字）</td>')&&o.includes('n/a 说明')&&o.includes('条件性测算'),'options compared shown as text; conditional label back');
  let rvw=panel(view(ok('2030-01-02-aaaa',today)),'review');assert(rvw.includes('估值日 2030-01-02 · 判断日 '+today)&&rvw.includes('由手动运行写入，每行注明判断日'),'valuation date, judgement date and manual writer');
  let sch=ok('2030-01-02-aaaa',today);sch.batch.run.trigger='scheduled';assert(panel(view(sch),'review').includes('由自动运行写入，每行注明判断日'),'scheduled writer');
+ let fv=ok('2030-01-02-ffff',today);Object.assign(fv.batch.run,{prompt_version:'v-示例',calculations:[{spec_file:'示例说明.md',spec:'x',output_file:'示例结果.json',best_by:'2030-01-09'}]});
+ fv.batch.risk_scenarios=[{id:'S0',label:'示例基线',loss_pct:'-1.0',crosses_budget:false},{id:'S1',label:'示例极端情景原文',loss_pct:'-20.0',crosses_budget:true,reverse_scale_to_budget:'示例反向检验说明'}];
+ fv.batch.decision={status:'关注',reason:'r'};fv.batch.decisions_needed=[{item:'示例待批一',proposal_id:'demo-cond-x',options:['补上示例后由我重算','暂缓']},{item:'示例待批二',risk_ref:'risk_scenarios',numbers:{S0:'-1.0',S1:'-20.0'}}];
+ fv.batch.proposals.proposals[1].withdrawal_compare={need_total:'100',usable_elsewhere:'40',need_from_ccb:'60',need_on:'2030-03-01',end:'2030-12-31',rows:[{case:'示例全部持有',taken_out:'0',excess_taken:'0',interest_on_taken:'0',given_up_on_taken:'0',end_wealth:'1000'},{case:'示例提前支取',taken_out:'60',excess_taken:'说明文字',interest_on_taken:'1',given_up_on_taken:'2',end_wealth:'999'}],note:'示例支取说明原文'};
+ let fvv=view(fv),fr=panel(fvv,'run'),fk=panel(fvv,'risk'),fd=panel(fvv,'decision'),fa=panel(fvv,'actions');
+ assert(fr.includes('<b>提示版本</b> v-示例')&&fr.includes('计算 1 项')&&fr.includes('示例说明.md')&&fr.includes('2030-01-09'),'prompt version and calculations');
+ assert(fvv.indexOf('data-fin-panel="risk"')<fvv.indexOf('data-fin-panel="policy"')&&fk.includes('示例极端情景原文')&&fk.includes('反向检验：示例反向检验说明')&&(fk.match(/越过损失预算/g)||[]).length===1&&fk.includes('-20.0%'),'risk table beside policy, one row over budget, label verbatim');
+ assert(fd.includes('引用风险情景 S0–S1')&&!fd.includes('引用数字不一致')&&fd.includes('对应方案 demo-cond-x'),'risk reference shown and consistent');
+ fv.batch.decisions_needed[1].numbers.S1='-19.0';assert(panel(view(fv),'decision').includes('引用数字不一致'),'mismatch flagged');
+ assert(fa.includes('提前支取对比')&&fa.includes('示例提前支取')&&fa.includes('说明文字')&&fa.includes('示例支取说明原文')&&fa.includes('2030-03-01'),'withdrawal comparison table and note');
  console.log('Finance run batch passed');
 }

@@ -221,11 +221,20 @@ function finControl(cd){
  return finCard('控制卡','Control cards',body,'control');
 }
 // 今日结论 / 需要你批准的决定: shown only from FIC's export; Desk decides nothing itself.
+// A decision that cites the risk scenarios is checked against the batch's own table (FD-076).
+function finRiskRef(n,scen){
+ if(n.risk_ref!=='risk_scenarios')return n.proposal_id?`<p class="tiny-label">对应方案 ${E(n.proposal_id)}</p>`:'';
+ let nums=n.numbers&&typeof n.numbers==='object'?n.numbers:{},ids=Object.keys(nums),by=Object.fromEntries((Array.isArray(scen)?scen:[]).map(x=>[x.id,x.loss_pct]));
+ let same=(a,b)=>{let x=Number(a),y=Number(b);return String(a)===String(b)||(isFinite(x)&&isFinite(y)&&a!==''&&b!==''&&x===y)};
+ let bad=ids.filter(k=>!(k in by)||!same(nums[k],by[k]));
+ let range=ids.length?(ids.length>1?`${ids[0]}–${ids[ids.length-1]}`:ids[0]):'';
+ return `<p class="tiny-label">引用风险情景 ${E(range)}${bad.length?` <span class="fin-status fin-status-review">引用数字不一致</span> ${bad.map(E).join('、')}`:''}</p>`;
+}
 const FIN_DECISION={'维持':'ok','关注':'warn','审查':'review'};
 function finDecision(cd){
  let d=cd&&cd.decision,items=Array.isArray(cd?.decisions_needed)?cd.decisions_needed:null;if(!d&&!items)return '';
  let head=d?`<div class="fin-decision"><span class="fin-status fin-status-${FIN_DECISION[d.status]||'ok'}">${E(d.status||'—')}</span>${d.as_of?`<span class="tiny-label">${E(d.as_of)}</span>`:''}${d.reason?`<p>${E(d.reason)}</p>`:''}</div>`:'';
- let need=`<h5>需要你批准的决定</h5>${items&&items.length?`<ul class="fin-needs">${items.map(n=>`<li><b>${E(n.item||n.title||'')}</b>${n.due?` <span class="tiny-label">截止 ${E(n.due)}</span>`:''}${n.analysis?`<p>${E(n.analysis)}</p>`:''}${Array.isArray(n.options)&&n.options.length?`<p class="tiny-label">可选：${n.options.map(E).join(' / ')}</p>`:''}</li>`).join('')}</ul>`:'<p class="tiny-label">今天没有需要你批准的决定</p>'}`;
+ let need=`<h5>需要你批准的决定</h5>${items&&items.length?`<ul class="fin-needs">${items.map(n=>`<li><b>${E(n.item||n.title||'')}</b>${n.due?` <span class="tiny-label">截止 ${E(n.due)}</span>`:''}${n.analysis?`<p>${E(n.analysis)}</p>`:''}${Array.isArray(n.options)&&n.options.length?`<p class="tiny-label">可选：${n.options.map(E).join(' / ')}</p>`:''}${finRiskRef(n,cd.risk_scenarios)}</li>`).join('')}</ul>`:'<p class="tiny-label">今天没有需要你批准的决定</p>'}`;
  return finCard('今日结论','Today’s conclusion',head+need,'decision');
 }
 // 持仓明细 with price date and valuation basis (FD-063). Basis shares are summed from the rows' own weights.
@@ -258,6 +267,15 @@ function finAlternatives(x,base){
  let st=a=>(a.after&&a.after.stress_pct||{});
  return `<h5>不同幅度对比</h5><div class="reading-table"><table><thead><tr><th>幅度</th><th>金额 ${E(base)}${finCond(x.status)}</th><th>最大单一持仓</th>${Object.keys(FIN_STRESS).map(k=>`<th>压力 · ${E(FIN_STRESS[k])}</th>`).join('')}</tr></thead><tbody>${alts.map(a=>`<tr><td>${String(a.scale)==='0'?'不交易':E(a.scale)+' 倍'}</td><td>${finNum(a.amount)}</td><td>${finPct(a.after&&a.after.top1_pct)}</td>${Object.keys(FIN_STRESS).map(k=>`<td>${finPct(st(a)[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
+// 提前支取对比 (FD-076): numbers are formatted only when they are plain numbers; text stays as exported.
+function finWithdrawal(x,base){
+ let w=x&&x.withdrawal_compare;if(!w||typeof w!=='object')return '';let rows=Array.isArray(w.rows)?w.rows:[];
+ let v=a=>a==null||a===''?'—':/^[-+]?\d+(\.\d+)?$/.test(String(a).trim())?finNum(a):E(a);
+ let kv=(l,a)=>a==null||a===''?'':`<span><span class="tiny-label">${E(l)}</span> <b>${v(a)}</b></span>`;
+ let head=`<div class="fin-run-facts">${kv('需要用钱',w.need_total)}${kv('其他可用',w.usable_elsewhere)}${kv('需从本方案取出',w.need_from_ccb)}${kv('用钱日期',w.need_on)}${kv('计算到',w.end)}</div>`;
+ let cols=[['case','情形'],['taken_out','取出'],['excess_taken','多取出'],['interest_on_taken','取出部分得到的利息'],['given_up_on_taken','取出部分放弃的利息'],['end_wealth','期末财富']];
+ return `<h5>提前支取对比 <span class="tiny-label">${E(base)}${finCond(x.status)}</span></h5>${head}${rows.length?`<div class="reading-table"><table><thead><tr>${cols.map(c=>`<th>${E(c[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td${c[0]==='case'?' class="fin-wrap"':''}>${c[0]==='case'?E(r[c[0]]??'—'):v(r[c[0]])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:''}${w.note?`<p class="fin-note">${E(w.note)}</p>`:''}`;
+}
 // 方案对照: FIC's own comparison, shown as text exactly as exported (no number formatting).
 function finOptionsCompared(x){
  let rows=Array.isArray(x.options_compared)?x.options_compared:[];if(!rows.length)return '';
@@ -273,7 +291,7 @@ function finActions(cd){
   ${x.feasible===false&&x.blocked_reason?`<p><b>不可行原因</b> ${E(x.blocked_reason)}</p>`:''}
   ${['条件性方案','待你批准'].includes(x.status)&&Array.isArray(x.assumptions)&&x.assumptions.length?`<div class="fin-assume"><b>前提假设（全部成立才适用）</b><ul>${x.assumptions.map(a=>`<li>${E(a)}</li>`).join('')}</ul></div>`:''}
   ${x.user_decision?`<p class="fin-user-decision"><b>你的决定</b> ${E(x.user_decision)}</p>`:''}${line('为什么是现在',x.why_now)}${line('为什么是这个规模',x.why_size)}${line('规模依据',x.size_basis)}${line('最强反对意见',x.strongest_objection)}${line('撤销条件',x.revoke_if)}${line('依据',x.evidence)}
-  ${moves.length?`<div class="reading-table"><table><thead><tr><th>来源</th><th>去向</th><th>金额 ${E(base)}${finCond(x.status)}</th><th>每年收益差</th></tr></thead><tbody>${moves.map(m=>`<tr><td>${E(m.from||'—')}</td><td>${E(m.to_name||'—')}${m.to_group?` <span class="tiny-label">${E(FIN_GROUP[m.to_group]||m.to_group)}</span>`:''}</td><td>${finNum(m.amount)}</td><td>${m.carry_per_year==null?'—':finSigned(m.carry_per_year)}</td></tr>`).join('')}</tbody></table></div>`:''}${finAlternatives(x,base)}${finOptionsCompared(x)}</li>`}).join('');
+  ${moves.length?`<div class="reading-table"><table><thead><tr><th>来源</th><th>去向</th><th>金额 ${E(base)}${finCond(x.status)}</th><th>每年收益差</th></tr></thead><tbody>${moves.map(m=>`<tr><td>${E(m.from||'—')}</td><td>${E(m.to_name||'—')}${m.to_group?` <span class="tiny-label">${E(FIN_GROUP[m.to_group]||m.to_group)}</span>`:''}</td><td>${finNum(m.amount)}</td><td>${m.carry_per_year==null?'—':finSigned(m.carry_per_year)}</td></tr>`).join('')}</tbody></table></div>`:''}${finAlternatives(x,base)}${finOptionsCompared(x)}${finWithdrawal(x,base)}</li>`}).join('');
  let research=unverified.length?`<h5>去向未核实，不可实施</h5><ul class="fin-withdrawn">${unverified.map(x=>`<li data-proposal="${E(x.id||'')}"><b>${E(x.title||'')}</b> ${finProposalStatus(x.status)} <span class="tiny-label">研究候选 · 去向未核实，不可实施</span>${x.why_now?`<p>${E(x.why_now)}</p>`:''}</li>`).join('')}</ul>`:'';
  let withdrawn=gone.length?`<h5>已撤销</h5><ul class="fin-withdrawn">${gone.map(x=>`<li data-proposal="${E(x.id||'')}"><b>${E(x.title||'')}</b> ${finTag(FIN_PROPOSAL,x.status)}${x.withdrawn?`<p>${E(x.withdrawn)}</p>`:''}</li>`).join('')}</ul>`:'';
  return finCard('今天最值得考虑的三项行动','Top actions today',`${p.as_of?`<p class="tiny-label">判断日期 ${E(p.as_of)}</p>`:''}${items?`<ol class="fin-actions">${items}</ol>`:'<p class="tiny-label">没有待考虑的方案</p>'}${p.note?`<p class="fin-note">${E(p.note)}</p>`:''}${research}${withdrawn}`,'actions');
@@ -340,9 +358,12 @@ function finRun(rb,manifest){
  let approv=pol.approvable==null?'':`<p class="fin-run-approve"><b>方案能否审批</b> ${pol.approvable?'可以审批':'<span class="fin-status fin-status-warn">暂不能审批</span>'}${reasons.length?`<span class="tiny-label">${reasons.join('；')}</span>`:''}</p>`;
  let list=(l,a)=>Array.isArray(a)&&a.length?`<div class="fin-run-list"><b>${E(l)}</b><ul>${a.map(x=>`<li>${E(x)}</li>`).join('')}</ul></div>`:'';
  let head=`<div class="fin-run-head"><span class="fin-status fin-status-${cls}">${E(zh)}</span><b class="fin-run-id">${E(run.run_id||'')}</b><span class="tiny-label">${E(FIN_TRIGGER[run.trigger]||run.trigger||'—')}运行</span></div>`;
+ let calcs=Array.isArray(run.calculations)?run.calculations:[];
+ let prompt=('prompt_version' in run)?`<p class="fin-run-approve"><b>提示版本</b> ${run.prompt_version==null?'未记录':E(run.prompt_version)}${calcs.length?'':' <span class="tiny-label">本次没有记录计算文件</span>'}</p>`:'';
+ if(calcs.length)prompt+=`<details class="fin-table"><summary>计算 ${calcs.length} 项</summary><div class="reading-table"><table><thead><tr><th>计算说明文件</th><th>结果文件</th><th>有效期</th></tr></thead><tbody>${calcs.map(c=>`<tr><td>${E(c.spec_file||'—')}</td><td>${E(c.output_file||'—')}</td><td>${E(c.best_by||'—')}</td></tr>`).join('')}</tbody></table></div></details>`;
  let todayNote=notToday?`<p class="fin-run-stale"><b>今天没有运行</b> · 下面是 ${E(runDay)} 的结果</p>`:'';
  let proof=`<p class="tiny-label fin-run-proof">Desk 读到的批次：${E(shown.pointer?.run_id||'')} · sha256 ${E(String(shown.sha256||'').slice(0,8))}${shown.pointer?.published_at?` · 发布于 ${E(shown.pointer.published_at)}`:''}${manifest?.exported_at?` · 导出清单时间 ${E(manifest.exported_at)}`:''}</p>`;
- return finCard('本次运行','Run',fail+head+todayNote+facts+approv+list('问题',run.problems)+list('阻断项',run.blocking)+proof,'run');
+ return finCard('本次运行','Run',fail+head+todayNote+facts+prompt+approv+list('问题',run.problems)+list('阻断项',run.blocking)+proof,'run');
 }
 const FIN_LIQ={same_day:'当天',t1:'T+1',t2:'T+2',t3_to_t7:'T+3 至 T+7',locked:'锁定期内',unknown:'不明'};
 function finLiquidity(l){
@@ -350,6 +371,13 @@ function finLiquidity(l){
  return `<h5>流动性${l.as_of?` <span class="tiny-label">${E(l.as_of)}</span>`:''}</h5><div class="fin-basis-summary">${l.within_2_days_normal_pct!=null?`<span><b>正常情况两天内可取用</b> ${finPct(l.within_2_days_normal_pct)}</span>`:''}${l.stress_same_day_pct!=null?`<span><b>压力情况下当天可取用</b> ${finPct(l.stress_same_day_pct)}</span>`:''}</div><div class="reading-table"><table><thead><tr>${Object.keys(FIN_LIQ).map(k=>`<th>${FIN_LIQ[k]}</th>`).join('')}</tr></thead><tbody><tr>${Object.keys(FIN_LIQ).map(k=>`<td>${finPct(n[k])}</td>`).join('')}</tr></tbody></table></div>${l.denominator?`<p class="tiny-label">口径：${E(l.denominator)}</p>`:''}${l.note?`<p class="fin-note">${E(l.note)}</p>`:''}`;
 }
 const FIN_POLICY={missing:['缺失','review'],assumed:['假设','warn']};
+// 风险情景 (FD-076): FIC's scenarios as exported; rows past the loss budget wear the existing red badge.
+const finPctText=v=>v==null||v===''?'—':/^[-+]?\d+(\.\d+)?$/.test(String(v).trim())?E(v)+'%':E(v);
+function finRiskBlock(rb){return rb&&rb.batch?finRisk(rb.batch.risk_scenarios):''}
+function finRisk(list){
+ let rows=Array.isArray(list)?list:[];if(!rows.length)return '';
+ return finCard('风险情景','Risk scenarios',`<div class="reading-table"><table><thead><tr><th>编号</th><th>情景</th><th>亏损</th><th>与损失预算</th></tr></thead><tbody>${rows.map(r=>`<tr${r.crosses_budget?' class="fin-risk-over"':''}><td>${E(r.id||'')}</td><td class="fin-wrap">${E(r.label||'')}${r.reverse_scale_to_budget?`<div class="tiny-label">反向检验：${E(r.reverse_scale_to_budget)}</div>`:''}</td><td>${finPctText(r.loss_pct)}</td><td>${r.crosses_budget?'<span class="fin-status fin-status-review">越过损失预算</span>':'未越过'}</td></tr>`).join('')}</tbody></table></div>`,'risk');
+}
 const FIN_LOSS_NOTE='15% 是你可接受的损失范围，不是保证，也不是自动卖出线';
 function finPolicy(p,nums,base){
  let fields=p&&p.fields&&typeof p.fields==='object'?Object.entries(p.fields).filter(([,v])=>v&&FIN_POLICY[v.status]):[];
@@ -364,7 +392,7 @@ function finPolicy(p,nums,base){
 function finBatchDecision(rb,hc){
  if(!rb)return finDecision(hc);let b=rb.batch;if(!b)return '';
  if(!('decision' in b)&&!('decisions_needed' in b))return finCard('今日结论','Today’s conclusion','<p class="tiny-label">该批次未包含结论</p>','decision');
- return finDecision({decision:b.decision||null,decisions_needed:Array.isArray(b.decisions_needed)?b.decisions_needed:[]});
+ return finDecision({decision:b.decision||null,decisions_needed:Array.isArray(b.decisions_needed)?b.decisions_needed:[],risk_scenarios:b.risk_scenarios});
 }
 function financeCharts(cd){
  if(!cd||typeof cd!=='object')return '';let base=String(cd.base||'');
@@ -401,7 +429,7 @@ function financeView(){
  let bc=rb?{...(hc||{}),...Object.fromEntries(['proposals','position_table','review','liquidity','policy'].map(k=>[k,rb.batch?rb.batch[k]:undefined]))}:hc;
  let reqPend=rb&&rb.batch&&rb.batch.run&&rb.batch.run.facts&&rb.batch.run.facts.policy&&rb.batch.run.facts.policy.required_pending;
  finCondMissing=Array.isArray(reqPend)?reqPend.length>0:!!(bc&&bc.policy&&bc.policy.fields&&Object.values(bc.policy.fields).some(v=>v&&v.status==='missing'));
- let top=finRun(rb,fic.manifest)+(holdings||rb?finBatchDecision(rb,hc)+finActions(bc)+finCash(bc)+finAdjust(bc)+finTrust(bc)+finPolicy(bc&&bc.policy,rb&&rb.batch&&rb.batch.run&&rb.batch.run.policy_numbers,(bc&&bc.base)||'')+finTrend(hc)+finGoal(hc)+finControl(hc):'');if(top)h+=`<div class="fin-charts fin-trend">${top}</div>`;
+ let top=finRun(rb,fic.manifest)+(holdings||rb?finBatchDecision(rb,hc)+finActions(bc)+finCash(bc)+finAdjust(bc)+finTrust(bc)+finRiskBlock(rb)+finPolicy(bc&&bc.policy,rb&&rb.batch&&rb.batch.run&&rb.batch.run.policy_numbers,(bc&&bc.base)||'')+finTrend(hc)+finGoal(hc)+finControl(hc):'');if(top)h+=`<div class="fin-charts fin-trend">${top}</div>`;
  h+=section('holdings','Holdings','持仓',holdings?`<article class="external-item finance-report">${externalItem({...holdings,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${finReview(bc,rb&&rb.batch&&rb.batch.run)}${finPositions(holdings.chart_data)}${financeCharts(holdings.chart_data)}${holdings.chart_data?`<details class="external-body"><summary>持仓明细 Details</summary><div class="external-markdown">${externalMarkdown(holdings.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(holdings.body)}</div>`}</article>`:'<div class="quiet-empty">No holdings exported yet</div>');
  h+=section('alerts','Alerts','提醒',`<div class="external-list">${alerts.map(r=>externalItem(r)).join('')||'<div class="quiet-empty">No alerts</div>'}</div>`);
  h+=section('review','Daily review','每日复盘',review?`<article class="external-item finance-report">${externalItem({...review,body:''}).replace(/^<article[^>]*>|<\/article>$/g,'')}${financeViews(review.views)}${financeFollowups(review.followups)}${review.views||review.followups?`<details class="external-body"><summary>复盘全文 Full review</summary><div class="external-markdown">${externalMarkdown(review.body)}</div></details>`:`<div class="external-markdown">${externalMarkdown(review.body)}</div>`}</article>${reviews.length>1?`<h4 class="external-sub">Earlier reviews</h4><div class="external-list">${reviews.slice(1,14).map(r=>externalItem(r)).join('')}</div>`:''}`:'<div class="quiet-empty">No review exported yet</div>');

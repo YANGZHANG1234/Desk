@@ -322,6 +322,59 @@ class FinanceLockTests(unittest.TestCase):
         self.assertNotIn('localStorage.setItem(\'desk.finance', js); self.assertNotIn('sessionStorage', js[js.index('let financeStatus'):js.index('async function loadExternal(')])
 
 
+class RunBatchTests(unittest.TestCase):
+    """FD-071: Desk shows a FIC run batch only when its bytes match the pointer's sha256 (fabricated data)."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name).resolve()
+        self.fic = self.root / 'fic'; (self.fic / 'runs').mkdir(parents=True)
+        feeds._last_run.clear()
+
+    def tearDown(self):
+        feeds._last_run.clear(); self.tmp.cleanup()
+
+    def publish(self, run_id, sha=None, file=None, body=None):
+        data = (body or json.dumps({'run': {'run_id': run_id, 'status': 'DEGRADED', 'trigger': 'manual'}, 'review': {'rows': []}})).encode()
+        (self.fic / 'runs' / f'{run_id}.json').write_bytes(data)
+        pointer = {'run_id': run_id, 'status': 'DEGRADED', 'trigger': 'manual', 'published_at': '2030-01-02T00:00:00+00:00',
+                   'file': file or f'runs/{run_id}.json', 'sha256': sha or hashlib.sha256(data).hexdigest()}
+        (self.fic / 'current_run.json').write_text(json.dumps(pointer))
+        return hashlib.sha256(data).hexdigest()
+
+    def test_no_pointer_means_no_run(self):
+        self.assertIsNone(feeds.load_run(self.root))
+
+    def test_verified_batch(self):
+        digest = self.publish('2030-01-02-aaaa')
+        r = feeds.load_run(self.root)
+        self.assertTrue(r['ok']); self.assertEqual(r['sha256'], digest); self.assertEqual(r['batch']['run']['run_id'], '2030-01-02-aaaa')
+
+    def test_mismatch_keeps_last_good(self):
+        self.publish('2030-01-02-aaaa'); feeds.load_run(self.root)
+        self.publish('2030-01-03-bbbb', sha='0' * 64)
+        r = feeds.load_run(self.root)
+        self.assertFalse(r['ok']); self.assertIn('sha256', r['error']); self.assertEqual(r['pointer']['run_id'], '2030-01-03-bbbb')
+        self.assertEqual(r['last_good']['pointer']['run_id'], '2030-01-02-aaaa')
+
+    def test_rejects_paths_and_mismatched_ids(self):
+        self.publish('2030-01-02-aaaa', file='../../etc/passwd')
+        self.assertFalse(feeds.load_run(self.root)['ok'])
+        (self.fic / 'current_run.json').write_text(json.dumps({'run_id': '../x', 'sha256': '0' * 64}))
+        self.assertIn('invalid run_id', feeds.load_run(self.root)['error'])
+        self.publish('2030-01-02-cccc', body=json.dumps({'run': {'run_id': 'other'}}))
+        self.assertIn('does not match', feeds.load_run(self.root)['error'])
+
+    def test_symlinked_runs_folder_refused(self):
+        self.publish('2030-01-02-aaaa')
+        elsewhere = self.root / 'elsewhere'; (self.fic / 'runs').rename(elsewhere); (self.fic / 'runs').symlink_to(elsewhere)
+        self.assertIn('symlink', feeds.load_run(self.root)['error'])
+
+    def test_run_only_travels_with_unlocked_fic(self):
+        self.publish('2030-01-02-aaaa')
+        self.assertEqual(feeds.load_source('fic', self.root)['run']['pointer']['run_id'], '2030-01-02-aaaa')
+        snap = feeds.guarded_snapshot(None, self.root)
+        self.assertTrue(snap['finance_locked']); self.assertNotIn('2030-01-02-aaaa', json.dumps(snap))
+
+
 if __name__ == '__main__':
     unittest.main()
 

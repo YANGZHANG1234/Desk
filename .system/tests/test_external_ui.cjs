@@ -424,5 +424,12 @@ console.log('Briefing view: sections, read-only badges, demo marks, escaping, sa
  assert(fd.includes('引用风险情景 S0–S1')&&!fd.includes('引用数字不一致')&&fd.includes('对应方案 demo-cond-x'),'risk reference shown and consistent');
  fv.batch.decisions_needed[1].numbers.S1='-19.0';assert(panel(view(fv),'decision').includes('引用数字不一致'),'mismatch flagged');
  assert(fa.includes('提前支取对比')&&fa.includes('示例提前支取')&&fa.includes('说明文字')&&fa.includes('示例支取说明原文')&&fa.includes('2030-03-01'),'withdrawal comparison table and note');
+ let oc=ok('2030-01-02-gggg',today),ocp=oc.batch.proposals.proposals[1];
+ ocp.options_compared=[{option:'示例存单',placed:'1',by_goal_date:'2',final_maturity:'2031-05-01',interest_to_final_maturity:'3.5（示例）','at_2030-12-31':'—（示例说明）',note:'示例'},{option:'示例活期',placed:'1',by_goal_date:'2',note:'示例'}];
+ let oct=(panel(view(oc),'actions').split('<h5>方案对照</h5>')[1]||'').split('</table>')[0];
+ assert(oct.includes('<th>到期日</th><th>到期利息</th><th>到 2030-12-31</th>')&&!oct.includes('2027-11-16')&&oct.includes('<td class="">2031-05-01</td>')&&oct.includes('3.5（示例）'),'maturity columns and dated column from the data');
+ assert((oct.split('<tr>')[3]||'').split('<td').filter(x=>x.includes('>—<')).length===3,'missing fields show a dash');
+ ocp.options_compared=[{option:'旧',placed:'1',by_goal_date:'2','at_2027-11-16':'4',note:'n'}];let old=(panel(view(oc),'actions').split('<h5>方案对照</h5>')[1]||'').split('</table>')[0];
+ assert(old.includes('<th>到 2027-11-16</th>')&&!old.includes('到期日'),'old batches keep their dated column');
  console.log('Finance run batch passed');
 }

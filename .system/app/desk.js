@@ -279,7 +279,10 @@ function finWithdrawal(x,base){
 // 方案对照: FIC's own comparison, shown as text exactly as exported (no number formatting).
 function finOptionsCompared(x){
  let rows=Array.isArray(x.options_compared)?x.options_compared:[];if(!rows.length)return '';
- let cols=[['option','方案'],['placed','投入'],['by_goal_date','到目标日期'],['at_2027-11-16','到 2027-11-16'],['note','说明']];
+ // Columns follow the data: maturity columns when exported, any at_YYYY-MM-DD key titled by its own date.
+ let has=k=>rows.some(r=>r&&r[k]!=null&&r[k]!=='');
+ let dated=[...new Set(rows.flatMap(r=>Object.keys(r||{}).filter(k=>/^at_\d{4}-\d{2}-\d{2}$/.test(k))))].sort().map(k=>[k,'到 '+k.slice(3)]);
+ let cols=[['option','方案'],['placed','投入'],...(has('by_goal_date')?[['by_goal_date','到目标日期']]:[]),...(has('final_maturity')||has('interest_to_final_maturity')?[['final_maturity','到期日'],['interest_to_final_maturity','到期利息']]:[]),...dated,['note','说明']];
  return `<h5>方案对照</h5><div class="reading-table"><table><thead><tr>${cols.map(c=>`<th>${E(c[1])}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c[0]==='note'||c[0]==='option'?'fin-wrap':''}">${r[c[0]]==null||r[c[0]]===''?'—':E(r[c[0]])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function finActions(cd){
